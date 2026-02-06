@@ -147,18 +147,26 @@ CREATE INDEX idx_alerts_time ON alerts (created_at DESC);
 
 ### 3. BatchWriter (`database/batch_writer.py`)
 ```python
-"""Collect records and bulk INSERT every 1 second. Avoids per-trade DB writes."""
+"""Collect records and bulk INSERT every 1 second using COPY protocol.
+
+BOUNDED QUEUES: maxsize=10000 per queue. On overflow, drop oldest with warning.
+COPY PROTOCOL: asyncpg copy_records_to_table is 5-10x faster than executemany for bulk inserts.
+"""
 import asyncio
-from collections import deque
+import logging
+
+logger = logging.getLogger(__name__)
+
+MAX_QUEUE_SIZE = 10_000
 
 class BatchWriter:
     def __init__(self, db: Database, flush_interval: float = 1.0):
         self._db = db
         self._interval = flush_interval
-        self._trade_queue: deque = deque()
-        self._foreign_queue: deque = deque()
-        self._basis_queue: deque = deque()
-        self._alert_queue: deque = deque()
+        self._trade_queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
+        self._foreign_queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
+        self._basis_queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
+        self._alert_queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
         self._task: asyncio.Task | None = None
 
     async def start(self):
@@ -172,33 +180,107 @@ class BatchWriter:
             await self._flush_basis()
             await self._flush_alerts()
 
+    def _enqueue_safe(self, queue: asyncio.Queue, item, label: str):
+        """Enqueue item. If queue full, drop oldest and log warning."""
+        if queue.full():
+            try:
+                dropped = queue.get_nowait()
+                logger.warning(f"BatchWriter {label} queue full ({MAX_QUEUE_SIZE}), "
+                               f"dropped oldest record")
+            except asyncio.QueueEmpty:
+                pass
+        try:
+            queue.put_nowait(item)
+        except asyncio.QueueFull:
+            logger.error(f"BatchWriter {label} queue still full after drop, discarding new record")
+
     def enqueue_trade(self, trade: ClassifiedTrade):
-        self._trade_queue.append(trade)
+        self._enqueue_safe(self._trade_queue, trade, "trade")
 
     def enqueue_foreign(self, data: ForeignInvestorData):
-        self._foreign_queue.append(data)
+        self._enqueue_safe(self._foreign_queue, data, "foreign")
 
     def enqueue_basis(self, bp: BasisPoint):
-        self._basis_queue.append(bp)
+        self._enqueue_safe(self._basis_queue, bp, "basis")
 
     def enqueue_alert(self, alert: Alert):
-        self._alert_queue.append(alert)
+        self._enqueue_safe(self._alert_queue, alert, "alert")
+
+    def _drain_queue(self, queue: asyncio.Queue) -> list:
+        """Drain all items from queue into a list."""
+        items = []
+        while not queue.empty():
+            try:
+                items.append(queue.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+        return items
 
     async def _flush_trades(self):
-        if not self._trade_queue:
+        batch = self._drain_queue(self._trade_queue)
+        if not batch:
             return
-        batch = []
-        while self._trade_queue:
-            batch.append(self._trade_queue.popleft())
+        records = [
+            (t.symbol, t.price, t.volume, t.value,
+             t.trade_type.value, t.bid_price, t.ask_price, t.timestamp)
+            for t in batch
+        ]
         async with self._db.pool.acquire() as conn:
-            await conn.executemany("""
-                INSERT INTO trades (symbol, price, volume, value, trade_type, bid_price, ask_price, traded_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-            """, [(t.symbol, t.price, t.volume, t.value,
-                   t.trade_type.value, t.bid_price, t.ask_price, t.timestamp)
-                  for t in batch])
+            await conn.copy_records_to_table(
+                'trades',
+                columns=['symbol', 'price', 'volume', 'value',
+                         'trade_type', 'bid_price', 'ask_price', 'traded_at'],
+                records=records,
+            )
+        logger.debug(f"Flushed {len(records)} trades via COPY")
 
-    # Similar _flush_foreign, _flush_basis, _flush_alerts methods
+    async def _flush_foreign(self):
+        batch = self._drain_queue(self._foreign_queue)
+        if not batch:
+            return
+        records = [
+            (d.symbol, d.buy_volume, d.sell_volume, d.net_volume,
+             d.buy_speed_per_min, d.sell_speed_per_min, datetime.now())
+            for d in batch
+        ]
+        async with self._db.pool.acquire() as conn:
+            await conn.copy_records_to_table(
+                'foreign_snapshots',
+                columns=['symbol', 'f_buy_vol', 'f_sell_vol', 'f_net_vol',
+                         'buy_speed_per_min', 'sell_speed_per_min', 'captured_at'],
+                records=records,
+            )
+
+    async def _flush_basis(self):
+        batch = self._drain_queue(self._basis_queue)
+        if not batch:
+            return
+        records = [
+            (b.futures_symbol, b.futures_price, b.spot_value, b.basis, b.timestamp)
+            for b in batch
+        ]
+        async with self._db.pool.acquire() as conn:
+            await conn.copy_records_to_table(
+                'basis_history',
+                columns=['futures_symbol', 'futures_price', 'spot_value',
+                         'basis', 'captured_at'],
+                records=records,
+            )
+
+    async def _flush_alerts(self):
+        batch = self._drain_queue(self._alert_queue)
+        if not batch:
+            return
+        records = [
+            (a.symbol, a.alert_type, a.message, a.severity, datetime.now())
+            for a in batch
+        ]
+        async with self._db.pool.acquire() as conn:
+            await conn.copy_records_to_table(
+                'alerts',
+                columns=['symbol', 'alert_type', 'message', 'severity', 'created_at'],
+                records=records,
+            )
 
     async def stop(self):
         if self._task:
@@ -209,6 +291,11 @@ class BatchWriter:
         await self._flush_basis()
         await self._flush_alerts()
 ```
+
+**Key changes from original:**
+- **Bounded queues**: `asyncio.Queue(maxsize=10000)` replaces unbounded `deque()`. Prevents OOM if DB is down.
+- **Drop-oldest on overflow**: When queue is full, oldest record is dropped with warning log.
+- **COPY protocol**: `copy_records_to_table` replaces `executemany`. 5-10x faster for bulk inserts. asyncpg COPY uses PostgreSQL binary protocol, bypassing SQL parsing per row.
 
 ### 4. Repositories (trade, foreign, ohlc, basis, alert)
 Simple query wrappers for historical data retrieval.
@@ -248,8 +335,8 @@ Use SSI REST API `DailyOHLC` endpoint to backfill historical data for VN30 stock
 ## Todo List
 - [ ] Create database connection module (asyncpg pool)
 - [ ] Create SQL migration (trades, daily_ohlc, foreign_snapshots, basis_history, alerts)
-- [ ] Implement BatchWriter (1s flush interval)
-- [ ] Implement trade repository (bulk insert + query)
+- [ ] Implement BatchWriter (1s flush, bounded queues maxsize=10000, COPY protocol)
+- [ ] Implement trade repository (COPY bulk insert + query)
 - [ ] Implement foreign repository
 - [ ] Implement basis repository
 - [ ] Implement alert repository
@@ -270,7 +357,7 @@ Use SSI REST API `DailyOHLC` endpoint to backfill historical data for VN30 stock
 - Docker Compose brings up PostgreSQL automatically
 
 ## Risk Assessment
-- **Batch write failure:** If DB is down, trades accumulate in memory. Add max queue size + warning log.
+- **Batch write failure:** MITIGATED. Bounded queues (maxsize=10000) with drop-oldest policy prevent OOM. Warning logged on overflow.
 - **Disk space:** ~18M trade rows/year for VN30 at moderate frequency. Manageable.
 - **Connection pool exhaustion:** 20 connections should be sufficient for <5 users + batch writer.
 - **Migration conflicts:** Use Alembic with sequential revision IDs.

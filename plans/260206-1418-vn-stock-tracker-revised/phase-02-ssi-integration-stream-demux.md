@@ -384,6 +384,53 @@ async def get_vn30():
     return vn30_symbols  # Cached from startup
 ```
 
+### 9. SSI Reconnect Reconciliation
+```python
+# After SSI WebSocket reconnects, data may have been missed during disconnect.
+# Foreign cumulative values may have jumped → first delta after reconnect could be huge/incorrect.
+# Solution: fetch snapshot from SSI REST API to reconcile state, then resume stream.
+
+class SSIStreamService:
+    def __init__(self, auth_service, market_service):
+        self._auth = auth_service
+        self._market = market_service
+        self._reconnecting = False
+        # ... existing init ...
+
+    async def _on_reconnect(self):
+        """Called after SSI WS reconnects. Fetch REST snapshot to reconcile missed data."""
+        self._reconnecting = True
+        logger.warning("SSI reconnected — fetching REST snapshot to reconcile state")
+        try:
+            # Fetch current foreign data from SSI REST to re-baseline cumulative values
+            snapshot = await self._market.fetch_securities_snapshot()
+            for item in snapshot:
+                symbol = item.get("Symbol", "")
+                if not symbol:
+                    continue
+                # Re-seed ForeignInvestorTracker._prev with current cumulative values
+                # so the next delta computation is correct (not a giant jump)
+                self._reconcile_callback(item)
+            logger.info("SSI reconnect reconciliation complete — resuming stream")
+        except Exception as e:
+            logger.error(f"Reconnect reconciliation failed: {e}. First deltas may be inaccurate.")
+        finally:
+            self._reconnecting = False
+
+    def _handle_error(self, error):
+        """Log error + trigger reconnect with reconciliation."""
+        logger.error(f"SSI stream error: {error}")
+        # ssi-fc-data auto-reconnects; hook into reconnect event
+        # After reconnect, call _on_reconnect() to reconcile state
+```
+
+**Key points:**
+- On reconnect, fetch current securities data via SSI REST API (`Securities` endpoint)
+- Re-seed `ForeignInvestorTracker._prev` with current cumulative values from REST snapshot
+- This prevents the first delta after reconnect from being a giant incorrect spike
+- Stream processing resumes normally after reconciliation
+- If REST fetch fails, log warning and accept that first deltas may be inaccurate
+
 ## Todo List
 - [ ] Create all Pydantic models (SSI messages + domain models)
 - [ ] Implement SSI auth service with ssi-fc-data
@@ -397,6 +444,8 @@ async def get_vn30():
 - [ ] Test: stream receives messages (log raw content)
 - [ ] Test: demux routes Trade/Quote/R/MI/B correctly
 - [ ] Add /api/vn30-components endpoint
+- [ ] Implement reconnect reconciliation (REST snapshot → re-seed foreign tracker)
+- [ ] Test: after reconnect, first foreign delta is correct (not a giant spike)
 
 ## Success Criteria
 - Server authenticates with SSI on startup
@@ -413,6 +462,7 @@ async def get_vn30():
 - **Field names vary by channel:** PascalCase mapping filters only known fields. Log unmapped keys at DEBUG level to discover missing fields.
 - **Token expiry unknown:** Implement periodic re-auth (every 30 min as safety).
 - **VN30F rollover:** MITIGATED. Subscribe both current + next month contracts. Primary switches after last Thursday of month.
+- **SSI reconnect data reconciliation:** MITIGATED. On reconnect, fetch REST snapshot to re-seed foreign tracker. Prevents incorrect delta spikes.
 
 ## Security Considerations
 - SSI credentials only in `.env`, loaded via pydantic-settings

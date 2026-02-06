@@ -57,6 +57,7 @@
 │   ├── vite.config.ts
 │   ├── tsconfig.json
 │   ├── package.json
+│   ├── nginx.conf                             # WS proxy config for production
 │   └── Dockerfile
 ├── docker-compose.yml
 ├── .gitignore

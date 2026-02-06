@@ -137,8 +137,84 @@ export interface Alert {
 }
 ```
 
-### 2. useWebSocket hook
-Same as old plan Phase 06 but handle new message types.
+### 2. useWebSocket hook with reconnect reconciliation
+```typescript
+// Extended from old plan with reconnect data reconciliation.
+// On reconnect: fetch full snapshot from REST API before resuming stream updates.
+// Show "Reconnecting..." status during the process.
+
+type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected';
+
+function useWebSocket(url: string, symbols: string[]) {
+  const [status, setStatus] = useState<ConnectionStatus>('connecting');
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectAttempt = useRef(0);
+  const onMessage = useRef<((msg: WSMessage) => void) | null>(null);
+
+  const connect = useCallback(() => {
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
+
+    ws.onopen = async () => {
+      const wasReconnecting = reconnectAttempt.current > 0;
+      reconnectAttempt.current = 0;
+
+      if (wasReconnecting) {
+        // RECONNECT RECONCILIATION: fetch fresh snapshot from REST API
+        // before processing any new stream messages
+        setStatus('reconnecting');
+        try {
+          const [statsRes, foreignRes, indicesRes, basisRes] = await Promise.all([
+            fetch('/api/session-stats').then(r => r.json()),
+            fetch('/api/foreign').then(r => r.json()),
+            fetch('/api/indices').then(r => r.json()),
+            fetch('/api/derivatives/basis').then(r => r.json()),
+          ]);
+          // Dispatch snapshot to reset state with current data
+          onMessage.current?.({
+            type: 'snapshot',
+            data: { stats: statsRes, foreign: foreignRes,
+                    indices: indicesRes, basis: basisRes },
+          });
+        } catch (err) {
+          console.error('Reconnect snapshot fetch failed:', err);
+          // Continue anyway — stream will fill in data
+        }
+      }
+
+      setStatus('connected');
+      // Re-subscribe to symbols
+      ws.send(JSON.stringify({ action: 'subscribe', symbols }));
+    };
+
+    ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data) as WSMessage;
+      onMessage.current?.(msg);
+    };
+
+    ws.onclose = () => {
+      setStatus('disconnected');
+      // Exponential backoff reconnect: 1s, 2s, 4s, max 30s
+      const delay = Math.min(1000 * 2 ** reconnectAttempt.current, 30000);
+      reconnectAttempt.current++;
+      setTimeout(connect, delay);
+    };
+
+    ws.onerror = () => ws.close();
+  }, [url, symbols]);
+
+  useEffect(() => { connect(); return () => wsRef.current?.close(); }, [connect]);
+
+  return { status, onMessage };
+}
+```
+
+**Reconnect reconciliation key points:**
+- On reconnect (not first connect), status transitions: `disconnected → reconnecting → connected`
+- During `reconnecting`, fetch all current state from REST API (`/api/session-stats`, `/api/foreign`, `/api/indices`, `/api/derivatives/basis`)
+- Dispatch as snapshot to reset stale state before resuming stream updates
+- If REST fetch fails, continue anyway — stream will gradually fill in correct data
+- "Reconnecting..." banner shown via `status === 'reconnecting'`
 
 ### 3. useMarketData hook
 Reducer extended with `INDEX`, `DERIVATIVES`, `ALERT` actions.
@@ -200,6 +276,12 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-gray-950 text-white">
       <Header indices={indices} />
+      {/* Reconnecting banner - shown during WS reconnect reconciliation */}
+      {status === 'reconnecting' && (
+        <div className="bg-amber-600 text-white text-center py-1 text-sm animate-pulse">
+          Dang ket noi lai... (Reconnecting...)
+        </div>
+      )}
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
           {selectedSymbol && <StockChart symbol={selectedSymbol} />}
@@ -221,8 +303,9 @@ export default function App() {
 
 ## Todo List
 - [ ] Create TypeScript types (extended with Index, Derivatives, Alert)
-- [ ] Create useWebSocket hook with reconnection
+- [ ] Create useWebSocket hook with reconnection + REST reconciliation on reconnect
 - [ ] Create useMarketData hook with extended reducer
+- [ ] Create "Reconnecting..." banner (shown during reconnect reconciliation)
 - [ ] Create price-color and format utilities
 - [ ] Create Header with MarketStatus component
 - [ ] Create IndexBar component (VN30, VNINDEX)

@@ -169,6 +169,62 @@ COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 ```
 
+### Nginx WebSocket Config (`frontend/nginx.conf`)
+```nginx
+# Handles static frontend + WebSocket proxy to backend.
+# CRITICAL: WebSocket requires explicit Upgrade/Connection headers.
+
+server {
+    listen 80;
+    server_name _;
+
+    # Frontend static files
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # SPA fallback - all non-API/WS routes serve index.html
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # REST API proxy
+    location /api/ {
+        proxy_pass http://backend:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket proxy - requires upgrade headers
+    location /ws/ {
+        proxy_pass http://backend:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # WS timeout settings - keep connection alive during market hours
+        proxy_read_timeout 3600s;   # 1 hour - covers full trading session
+        proxy_send_timeout 3600s;
+        proxy_connect_timeout 10s;
+    }
+
+    # Health check for Docker/load balancer
+    location /health {
+        proxy_pass http://backend:8000;
+    }
+}
+```
+
+**Key nginx WS config points:**
+- `proxy_http_version 1.1` required for WebSocket (HTTP/1.0 doesn't support Upgrade)
+- `Upgrade` + `Connection "upgrade"` headers forward the WebSocket handshake
+- `proxy_read_timeout 3600s` prevents nginx from closing idle WS connections during market hours
+- Backend heartbeat (30s) keeps the connection active within nginx timeout
+
 ### docker-compose.yml (production)
 ```yaml
 services:
@@ -228,6 +284,7 @@ logging.basicConfig(
 - [ ] Write unit tests for ConnectionManager
 - [ ] Write frontend utility tests (price-color, format)
 - [ ] Create production Dockerfiles (backend + frontend)
+- [ ] Create nginx.conf with WebSocket proxy (Upgrade headers, 1h timeout)
 - [ ] Create production docker-compose.yml
 - [ ] Add structured logging
 - [ ] Add error handling (try/except in all async callbacks)
@@ -245,7 +302,7 @@ logging.basicConfig(
 ## Risk Assessment
 - **SSI credentials in Docker:** Use env_file, never bake into image
 - **PostgreSQL password:** Use env var, not hardcoded in compose
-- **Nginx WS proxy:** Ensure nginx.conf proxies WebSocket upgrade to backend
+- **Nginx WS proxy:** MITIGATED. nginx.conf provided with Upgrade/Connection headers, 1h read timeout
 
 ## Verification (End-to-End)
 1. `docker compose up -d` → all services start
