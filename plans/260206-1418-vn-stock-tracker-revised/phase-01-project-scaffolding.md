@@ -113,6 +113,12 @@ class Settings(BaseSettings):
     app_port: int = 8000
     debug: bool = False
 
+    # Channel R (foreign investor) assumed update interval for speed calculation
+    channel_r_interval_ms: int = 1000  # configurable, default 1s
+
+    # Futures contract override (e.g., "VN30F2603" to force specific contract)
+    futures_override: str = ""  # empty = auto-detect via VN30F{YYMM} pattern
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 settings = Settings()
@@ -154,6 +160,8 @@ async def health():
 SSI_CONSUMER_ID=your_consumer_id
 SSI_CONSUMER_SECRET=your_consumer_secret
 DATABASE_URL=postgresql://stock:stock@localhost:5432/stock_tracker
+CHANNEL_R_INTERVAL_MS=1000
+FUTURES_OVERRIDE=
 ```
 
 ### 6. Frontend package.json

@@ -96,6 +96,10 @@ SSI WebSocket (SignalR)
 - **No vnstock, no TCBS** - both unnecessary since SSI has all data
 - **LastVol for trade classification** - per-trade volume, NOT TotalVol (cumulative)
 - **Foreign delta tracking** - Channel R sends cumulative; compute deltas for speed/acceleration
+- **Channel R frequency** - configurable via `CHANNEL_R_INTERVAL_MS` env (default 1000ms). Speed calc adapts to actual interval.
+- **ssi-fc-data is sync-only** - always wrap with `asyncio.to_thread()`. No async API available.
+- **Active futures contract** - pattern `VN30F{YYMM}`, subscribe both current+next month. `FUTURES_OVERRIDE` env for manual control.
+- **MVP scope: HOSE/VN30 only** - schema includes `exchange` field for future HNX/UPCoM support, but MVP filters to HOSE VN30 stocks only.
 - **Full backend proxy** - SSI→FastAPI→React (centralized processing, secure credentials, DB persistence)
 - **PostgreSQL** - trade history, foreign snapshots, analytics data
 - **Batch DB writes** - every 1s, not per-trade, to reduce load

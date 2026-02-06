@@ -16,7 +16,7 @@
 - Library: `ssi-fc-data` provides `MarketDataStream` class
 - Channel format: `{ChannelType}:{Symbol}` (e.g., `X:VNM`, `R:ALL`, `MI:VN30`)
 - **NOT** `HOSE.VNM` (old plan was WRONG)
-- `MarketDataStream.start()` may be blocking - MUST test and handle
+- `MarketDataStream.start()` is blocking (sync-only library). ALWAYS use `asyncio.to_thread()`.
 - RType discriminator: `"Trade"`, `"Quote"`, `"R"`, `"MI"`, `"B"`, `"F"`
 - Derivative futures naming: `VN30F{YYMM}` (e.g., `VN30F2602`)
 
@@ -34,6 +34,7 @@
   - `X:VN30F{YYMM}` - current month futures
   - `B:ALL` - OHLC bars
 - Demux messages by RType and dispatch to appropriate handlers
+- Filter to HOSE/VN30 stocks in MVP (schema supports `exchange` field for future HNX/UPCoM)
 - Auto-reconnect on disconnect with exponential backoff
 
 ### Non-Functional
@@ -306,7 +307,13 @@ def get_futures_symbols() -> list[str]:
 
     Near expiry (last Thursday of month), next month becomes the active
     contract. Subscribe to both to avoid missing data during rollover.
+
+    If FUTURES_OVERRIDE env is set, use that as the sole contract.
     """
+    override = settings.futures_override
+    if override:
+        return [override]
+
     now = datetime.now()
     current = f"VN30F{now.strftime('%y%m')}"
 
@@ -357,10 +364,10 @@ async def lifespan(app: FastAPI):
     await stream_service.disconnect()
 ```
 
-### 7. SSI SignalR connection via asyncio.to_thread (DEFAULT)
+### 7. SSI SignalR connection via asyncio.to_thread (MANDATORY)
 ```python
-# SignalR hub.start() is BLOCKING by design (runs its own event loop).
-# ALWAYS run in a thread to avoid freezing the async event loop.
+# ssi-fc-data is sync-only. SignalR hub.start() blocks the calling thread.
+# ALWAYS run in a thread — this is mandatory, not a fallback.
 import asyncio
 
 async def connect(self, channels: list[str]):
@@ -457,7 +464,7 @@ class SSIStreamService:
 - `/api/vn30-components` returns VN30 stock list
 
 ## Risk Assessment
-- **MarketDataStream.start() blocking:** MITIGATED. Using `asyncio.to_thread()` as default. If ssi-fc-data has other async issues, may need raw SignalR client.
+- **MarketDataStream.start() blocking:** RESOLVED. ssi-fc-data is sync-only. `asyncio.to_thread()` is mandatory for all SSI calls.
 - **Channel subscription format:** Verify `X-TRADE:ALL` vs `X:ALL` behavior. May need to use `X:ALL` and filter by RType.
 - **Field names vary by channel:** PascalCase mapping filters only known fields. Log unmapped keys at DEBUG level to discover missing fields.
 - **Token expiry unknown:** Implement periodic re-auth (every 30 min as safety).

@@ -39,6 +39,7 @@
 - Classification latency <5ms per trade
 - Memory: support 500+ symbols (~few MB)
 - All operations async-safe
+- MVP: process HOSE/VN30 stocks only. Schema `exchange` field preserved for future expansion.
 
 ## Architecture
 ```
@@ -216,6 +217,7 @@ class ForeignInvestorTracker:
     def __init__(self):
         self._prev: dict[str, SSIForeignMessage] = {}
         self._session: dict[str, ForeignInvestorData] = {}
+        # Rolling window for speed calc. Interval configurable via CHANNEL_R_INTERVAL_MS env.
         self._history: dict[str, deque[ForeignDelta]] = {}  # rolling window
 
     def update(self, msg: SSIForeignMessage) -> ForeignInvestorData:
@@ -448,7 +450,7 @@ async def daily_reset_loop():
 ## Risk Assessment
 - **No Quote before first Trade:** If Trade arrives before any Quote for a symbol, bid/ask cache is empty → classify as NEUTRAL. This is acceptable (data fills in within seconds of market open).
 - **LastVol during ATO/ATC:** Batch auction LastVol may be the entire auction volume, not a single trade. Classifying as NEUTRAL during these sessions avoids misattribution.
-- **Channel R update frequency:** Unknown how often SSI sends R updates. May be less frequent than trades. Speed calculation adapts to actual frequency.
+- **Channel R update frequency:** Configurable via `CHANNEL_R_INTERVAL_MS` env (default 1000ms). Speed calculation uses actual observed timestamps between deltas, not assumed interval.
 - **Basis accuracy:** Depends on VN30 index updating frequently. If MI updates lag, basis calculation will be slightly stale.
 
 ## Next Steps

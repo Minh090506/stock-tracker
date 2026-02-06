@@ -149,9 +149,9 @@ Phase 2 and Phase 5 are most likely to exceed estimates due to unknowns (SignalR
 
 **APPROVE with fixes.** Plan is well-structured and technically sound. The 5 critical issues are all implementation bugs, not architectural problems. Fix them during Phase 2-3 implementation and proceed.
 
-## Unresolved Questions
+## Resolved Questions
 
-1. What is the actual Channel R update frequency? Affects speed calculation accuracy.
-2. Does `ssi-fc-data` support async natively or is it sync-only?
-3. VN30F contract listing - is there an SSI API to get the active futures contract programmatically?
-4. Should the app support HNX stocks in future, or strictly VN30 (HOSE) only?
+1. **Channel R update frequency:** Unknown at build time. Configurable via `CHANNEL_R_INTERVAL_MS` env (default 1000ms). Speed calculation adapts to actual observed interval.
+2. **ssi-fc-data async support:** Treat as sync-only. Always wrap with `asyncio.to_thread()` — this is the default strategy, not a fallback.
+3. **VN30F contract listing:** No SSI API for active contract. Use pattern `VN30F{YYMM}`, subscribe both current+next month. `FUTURES_OVERRIDE` env for manual control during rollover edge cases.
+4. **HNX/UPCoM scope:** MVP targets HOSE VN30 only. Schema includes `exchange` field so data model supports future expansion to HNX/UPCoM without migration.
