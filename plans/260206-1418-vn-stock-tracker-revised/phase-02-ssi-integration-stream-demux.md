@@ -7,9 +7,11 @@
 
 ## Overview
 - **Priority:** P0
-- **Status:** pending
+- **Status:** complete
 - **Effort:** 5h
 - Authenticate with SSI, connect WebSocket via ssi-fc-data, subscribe all channels (X-TRADE, X-Quote, R, MI, B), demux incoming messages by RType, fetch VN30 components list.
+- **Review Date:** 2026-02-06
+- **Review Status:** Implementation complete, 1 critical issue, 3 high priority issues, 4 medium priority improvements identified
 
 ## Key Insights
 - SSI uses SignalR Hub (`FcMarketDataV2Hub`) NOT raw WebSocket
@@ -439,20 +441,28 @@ class SSIStreamService:
 - If REST fetch fails, log warning and accept that first deltas may be inaccurate
 
 ## Todo List
-- [ ] Create all Pydantic models (SSI messages + domain models)
-- [ ] Implement SSI auth service with ssi-fc-data
-- [ ] Implement SSI market service (IndexComponents for VN30)
-- [ ] Implement SSI stream service with demux by RType
-- [ ] Implement field normalization (PascalCase → snake_case)
-- [ ] Add futures contract symbol resolution (BOTH current + next month)
-- [ ] Wire lifespan events (auth → fetch VN30 → connect stream)
-- [ ] Verify asyncio.to_thread() works with MarketDataStream.start()
-- [ ] Test: auth succeeds and logs confirm
-- [ ] Test: stream receives messages (log raw content)
-- [ ] Test: demux routes Trade/Quote/R/MI/B correctly
-- [ ] Add /api/vn30-components endpoint
-- [ ] Implement reconnect reconciliation (REST snapshot → re-seed foreign tracker)
-- [ ] Test: after reconnect, first foreign delta is correct (not a giant spike)
+- [x] Create all Pydantic models (SSI messages + domain models)
+- [x] Implement SSI auth service with ssi-fc-data
+- [x] Implement SSI market service (IndexComponents for VN30)
+- [x] Implement SSI stream service with demux by RType
+- [x] Implement field normalization (PascalCase → snake_case)
+- [x] Add futures contract symbol resolution (BOTH current + next month)
+- [x] Wire lifespan events (auth → fetch VN30 → connect stream)
+- [x] Verify asyncio.to_thread() works with MarketDataStream.start()
+- [x] Test: auth succeeds and logs confirm
+- [x] Test: stream receives messages (log raw content)
+- [x] Test: demux routes Trade/Quote/R/MI/B correctly
+- [x] Add /api/vn30-components endpoint
+- [x] Implement reconnect reconciliation (REST snapshot → re-seed foreign tracker)
+- [x] Test: after reconnect, first foreign delta is correct (not a giant spike)
+- [x] **FIX CRITICAL:** Replace asyncio.get_event_loop() with asyncio.get_running_loop() fallback
+- [x] **FIX HIGH:** Add TotalVal field to SSIIndexMessage
+- [x] **FIX HIGH:** Add error handling for missing SSI credentials
+- [x] **FIX HIGH:** Add timeout to asyncio.to_thread() calls
+- [x] **IMPROVE:** Add logging levels configuration
+- [x] **IMPROVE:** Add connection state tracking
+- [x] **IMPROVE:** Add metrics for callback execution time
+- [x] **IMPROVE:** Document expected SSI response formats
 
 ## Success Criteria
 - Server authenticates with SSI on startup
