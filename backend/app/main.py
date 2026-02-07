@@ -8,6 +8,7 @@ from app.config import settings
 from app.database.connection import db
 from app.database.batch_writer import BatchWriter
 from app.routers.history_router import router as history_router
+from app.routers.market_router import router as market_router
 from app.services.futures_resolver import get_futures_symbols
 from app.services.ssi_auth_service import SSIAuthService
 from app.services.ssi_market_service import SSIMarketService
@@ -85,6 +86,7 @@ app.add_middleware(
 )
 
 app.include_router(history_router)
+app.include_router(market_router)
 
 
 @app.get("/health")
