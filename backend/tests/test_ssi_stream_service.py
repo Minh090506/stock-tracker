@@ -28,7 +28,7 @@ def stream_service():
     market = MagicMock()
     svc = SSIStreamService(auth, market)
     # Set the event loop so _schedule_callback works
-    svc._loop = asyncio.get_event_loop()
+    svc._loop = asyncio.new_event_loop()
     return svc
 
 
@@ -76,7 +76,7 @@ class TestHandleMessage:
         }}
         stream_service._handle_message(raw)
         # Callback scheduled via run_coroutine_threadsafe — give event loop a tick
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         cb.assert_called_once()
         msg = cb.call_args[0][0]
         assert isinstance(msg, SSITradeMessage)
@@ -90,7 +90,7 @@ class TestHandleMessage:
             "BidPrice1": 25400, "AskPrice1": 25500,
         }}
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         cb.assert_called_once()
         msg = cb.call_args[0][0]
         assert isinstance(msg, SSIQuoteMessage)
@@ -103,7 +103,7 @@ class TestHandleMessage:
             "FBuyVol": 500, "FSellVol": 300,
         }}
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         cb.assert_called_once()
         msg = cb.call_args[0][0]
         assert isinstance(msg, SSIForeignMessage)
@@ -116,7 +116,7 @@ class TestHandleMessage:
             "RType": "MI", "IndexId": "VN30", "IndexValue": 1234.56,
         }}
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         cb.assert_called_once()
         msg = cb.call_args[0][0]
         assert isinstance(msg, SSIIndexMessage)
@@ -127,7 +127,7 @@ class TestHandleMessage:
         stream_service.on_trade(cb)
         raw = {"Content": {"RType": "Unknown", "Symbol": "VNM"}}
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         cb.assert_not_called()
 
     def test_invalid_message_no_crash(self, stream_service):
@@ -145,7 +145,7 @@ class TestHandleMessage:
             "RType": "Trade", "Symbol": "FPT", "LastPrice": 90000,
         }})
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         cb.assert_called_once()
 
     def test_multiple_callbacks_all_invoked(self, stream_service):
@@ -155,7 +155,7 @@ class TestHandleMessage:
         stream_service.on_trade(cb2)
         raw = {"Content": {"RType": "Trade", "Symbol": "VNM"}}
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         cb1.assert_called_once()
         cb2.assert_called_once()
 
@@ -167,7 +167,7 @@ class TestCallbackErrorIsolation:
         stream_service.on_trade(failing_cb)
         raw = {"Content": {"RType": "Trade", "Symbol": "VNM"}}
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         failing_cb.assert_called_once()
 
     def test_failing_callback_doesnt_block_others(self, stream_service):
@@ -178,7 +178,7 @@ class TestCallbackErrorIsolation:
         stream_service.on_trade(good_cb)
         raw = {"Content": {"RType": "Trade", "Symbol": "VNM"}}
         stream_service._handle_message(raw)
-        asyncio.get_event_loop().run_until_complete(asyncio.sleep(0.05))
+        stream_service._loop.run_until_complete(asyncio.sleep(0.05))
         good_cb.assert_called_once()
 
 
