@@ -8,8 +8,8 @@
 
 ## Overview
 - **Priority:** P0
-- **Status:** in_progress (3A+3B complete, 3C pending)
-- **Effort:** 6h (4h spent on 3A+3B, 2h remaining for 3C)
+- **Status:** complete (3A+3B+3C all implemented and tested)
+- **Effort:** 8h (6h spent on 3A+3B+3C completed, 2h for daily reset deferred)
 - **MOST CRITICAL PHASE** - Build QuoteCache, TradeClassifier (CORRECTED), ForeignInvestorTracker (REWRITTEN), IndexTracker, DerivativesTracker, SessionAggregator.
 
 ## Phase 3B Completion (2026-02-07)
@@ -18,6 +18,14 @@
 - ✓ Tests: 56 new tests (29 foreign + 27 index), all passing
 - ✓ Integration: wired into MarketDataProcessor and main.py callbacks
 - 📊 Code review: APPROVED (see reports/code-reviewer-260207-1149-phase-3b-implementation-review.md)
+
+## Phase 3C Completion (2026-02-07)
+- ✓ DerivativesTracker: basis calculation (futures - VN30 spot), premium/discount detection, basis_pct
+- ✓ Multi-contract support: volume-based active contract selection for VN30F rollover
+- ✓ Unified API: MarketSnapshot model aggregates quotes + indices + foreign + derivatives
+- ✓ Tests: 34 new tests (17 derivatives + 14 processor updates + 3 integration), all passing
+- ✓ Integration: 100+ tick simulation validates end-to-end data flow across all channels
+- 📊 Code review: APPROVED (see reports/code-reviewer-260207-1504-phase-3c-derivatives-tracker-review.md)
 
 ## Critical Corrections from Old Plan
 
@@ -434,16 +442,19 @@ async def daily_reset_loop():
 - [x] Create SessionAggregator (mua/ban totals per symbol) — Phase 3A COMPLETE
 - [x] Create ForeignInvestorTracker (REWRITTEN: Channel R deltas + speed + accel) — Phase 3B COMPLETE
 - [x] Create IndexTracker (VN30/VNINDEX from Channel MI + breadth + sparkline) — Phase 3B COMPLETE
-- [ ] Create DerivativesTracker (basis = futures - spot) — Phase 3C PENDING
-- [x] Create MarketDataProcessor orchestrator — Phase 3A+3B COMPLETE
+- [x] Create DerivativesTracker (basis = futures - spot) — Phase 3C COMPLETE
+- [x] Create MarketDataProcessor orchestrator — Phase 3A+3B+3C COMPLETE
 - [x] Wire processor callbacks into SSI stream — Phase 3B COMPLETE
-- [ ] Add daily reset at 15:00 VN — Phase 3C PENDING
+- [x] Add unified API (get_market_snapshot, get_derivatives_data) — Phase 3C COMPLETE
+- [ ] Add daily reset at 15:00 VN — DEFERRED to future phase (reset methods implemented)
 - [x] Unit test: classify with known bid=10, ask=11, price=11 → MUA — Phase 3A COMPLETE
 - [x] Unit test: classify with price=10 → BAN — Phase 3A COMPLETE
 - [x] Unit test: foreign delta computation — Phase 3B COMPLETE (29 tests)
 - [x] Unit test: index breadth, sparkline — Phase 3B COMPLETE (27 tests)
-- [ ] Unit test: basis calculation — Phase 3C PENDING
+- [x] Unit test: basis calculation — Phase 3C COMPLETE (17 tests)
+- [x] Integration test: 100+ ticks multi-channel — Phase 3C COMPLETE (3 tests)
 - [x] Test ATO/ATC trades classified as NEUTRAL — Phase 3A COMPLETE
+- [x] All 232 tests passing — COMPLETE (56 Phase 3A/3B + 34 Phase 3C + others)
 
 ## Success Criteria
 - Trade classifier uses `last_vol` (per-trade), NOT `total_vol` (cumulative)
