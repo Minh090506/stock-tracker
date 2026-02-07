@@ -4,15 +4,13 @@ Determines current + next month contract symbols and identifies the primary
 (most active) contract based on rollover logic (last Thursday of month).
 """
 
-from typing import List
-
 from calendar import monthrange
 from datetime import datetime, timedelta
 
 from app.config import settings
 
 
-def get_futures_symbols() -> List[str]:
+def get_futures_symbols() -> list[str]:
     """Return BOTH current and next month VN30F contract symbols.
 
     Near expiry (last Thursday of month), next month becomes the active

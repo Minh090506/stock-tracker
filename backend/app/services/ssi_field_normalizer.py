@@ -6,7 +6,6 @@ by mapping PascalCase field names to snake_case model fields.
 
 import json
 import logging
-from typing import Dict, Optional, Tuple
 
 from app.models.ssi_messages import (
     SSIBarMessage,
@@ -19,7 +18,7 @@ from app.models.ssi_messages import (
 logger = logging.getLogger(__name__)
 
 # PascalCase→snake_case mapping for all known SSI fields
-FIELD_MAP: Dict[str, str] = {
+FIELD_MAP: dict[str, str] = {
     "Symbol": "symbol",
     "Exchange": "exchange",
     "StockSymbol": "symbol",
@@ -77,7 +76,7 @@ def normalize_fields(content: dict) -> dict:
     return {FIELD_MAP[k]: v for k, v in content.items() if k in FIELD_MAP}
 
 
-def extract_content(raw) -> Optional[dict]:
+def extract_content(raw) -> dict | None:
     """Extract the content dict from a raw SSI message."""
     if isinstance(raw, str):
         try:
@@ -92,7 +91,7 @@ def extract_content(raw) -> Optional[dict]:
 
 
 # RType→(model_class) routing table
-RTYPE_ROUTER: Dict[str, type] = {
+RTYPE_ROUTER: dict[str, type] = {
     "Trade": SSITradeMessage,
     "Quote": SSIQuoteMessage,
     "R": SSIForeignMessage,
@@ -101,7 +100,7 @@ RTYPE_ROUTER: Dict[str, type] = {
 }
 
 
-def parse_message(content: dict) -> Optional[Tuple[str, object]]:
+def parse_message(content: dict) -> tuple[str, object] | None:
     """Parse SSI content dict into (rtype, typed_model) or None if unknown."""
     rtype = content.get("RType", "")
     model_cls = RTYPE_ROUTER.get(rtype)

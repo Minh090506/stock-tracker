@@ -1,6 +1,5 @@
 import logging
 from contextlib import asynccontextmanager
-from typing import List
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +18,7 @@ market_service = SSIMarketService(auth_service)
 stream_service = SSIStreamService(auth_service, market_service)
 
 # Cached at startup
-vn30_symbols: List[str] = []
+vn30_symbols: list[str] = []
 
 
 @asynccontextmanager

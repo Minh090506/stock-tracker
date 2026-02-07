@@ -6,7 +6,6 @@ Used at startup and for reconnect reconciliation.
 
 import asyncio
 import logging
-from typing import List
 
 from ssi_fc_data.fc_md_client import MarketDataClient
 
@@ -23,7 +22,7 @@ class SSIMarketService:
         self._config = auth_service.config
         self._client: MarketDataClient = auth_service.client
 
-    async def fetch_vn30_components(self) -> List[str]:
+    async def fetch_vn30_components(self) -> list[str]:
         """Fetch current VN30 index component symbols.
 
         Uses IndexComponents API. Returns list like ["VNM", "HPG", "VCB", ...].
@@ -45,7 +44,7 @@ class SSIMarketService:
             logger.exception("Failed to fetch VN30 components")
             return []
 
-    async def fetch_securities_snapshot(self) -> List[dict]:
+    async def fetch_securities_snapshot(self) -> list[dict]:
         """Fetch current securities data via REST for reconnect reconciliation.
 
         Returns raw list of dicts with Symbol, FBuyVol, FSellVol, etc.
@@ -68,7 +67,7 @@ class SSIMarketService:
             return []
 
     @staticmethod
-    def _extract_symbols(result) -> List[str]:
+    def _extract_symbols(result) -> list[str]:
         """Extract symbol list from SSI IndexComponents response."""
         if not isinstance(result, dict):
             return []
@@ -78,7 +77,7 @@ class SSIMarketService:
         return []
 
     @staticmethod
-    def _extract_data_list(result) -> List[dict]:
+    def _extract_data_list(result) -> list[dict]:
         """Extract data list from SSI Securities response."""
         if not isinstance(result, dict):
             return []

@@ -5,7 +5,6 @@ Used by Phase 3+ data processing services (TradeClassifier, ForeignTracker, etc.
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -39,7 +38,7 @@ class SessionStats(BaseModel):
     ban_chu_dong_value: float = 0.0
     neutral_volume: int = 0
     total_volume: int = 0
-    last_updated: Optional[datetime] = None
+    last_updated: datetime | None = None
 
 
 class ForeignInvestorData(BaseModel):
@@ -56,7 +55,7 @@ class ForeignInvestorData(BaseModel):
     current_room: int = 0
     buy_speed_per_min: float = 0.0
     sell_speed_per_min: float = 0.0
-    last_updated: Optional[datetime] = None
+    last_updated: datetime | None = None
 
 
 class IndexData(BaseModel):
@@ -70,7 +69,7 @@ class IndexData(BaseModel):
     total_volume: int = 0
     advances: int = 0
     declines: int = 0
-    last_updated: Optional[datetime] = None
+    last_updated: datetime | None = None
 
 
 class BasisPoint(BaseModel):

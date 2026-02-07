@@ -7,7 +7,7 @@ and handles reconnection with REST snapshot reconciliation.
 
 import asyncio
 import logging
-from typing import Callable, Dict, List, Optional, Set
+from collections.abc import Callable
 
 from ssi_fc_data.fc_md_client import MarketDataClient
 from ssi_fc_data.fc_md_stream import MarketDataStream
@@ -26,11 +26,11 @@ class SSIStreamService:
     def __init__(self, auth_service, market_service):
         self._auth = auth_service
         self._market = market_service
-        self._stream: Optional[MarketDataStream] = None
-        self._stream_task: Optional[asyncio.Task] = None
+        self._stream: MarketDataStream | None = None
+        self._stream_task: asyncio.Task | None = None
         self._reconnecting = False
         # Callback registry keyed by RType
-        self._callbacks: Dict[str, List[MessageCallback]] = {
+        self._callbacks: dict[str, list[MessageCallback]] = {
             "Trade": [],
             "Quote": [],
             "R": [],
@@ -38,11 +38,11 @@ class SSIStreamService:
             "B": [],
         }
         # Prevent GC of fire-and-forget callback tasks
-        self._background_tasks: Set[asyncio.Task] = set()
+        self._background_tasks: set[asyncio.Task] = set()
         # Reconciliation callback set by the app layer (Phase 3)
-        self._reconcile_callback: Optional[Callable] = None
+        self._reconcile_callback: Callable | None = None
         # Main event loop ref — captured at connect() time for cross-thread dispatch
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     # -- Callback registration --
 
@@ -67,7 +67,7 @@ class SSIStreamService:
 
     # -- Connection lifecycle --
 
-    async def connect(self, channels: List[str]):
+    async def connect(self, channels: list[str]):
         """Connect SSI stream in a background thread.
 
         This is the DEFAULT approach — SignalR start() blocks the calling thread,

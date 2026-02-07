@@ -6,7 +6,6 @@ Token is stored in-memory for stream authentication.
 
 import asyncio
 import logging
-from typing import Optional
 
 from ssi_fc_data.fc_md_client import MarketDataClient
 
@@ -36,10 +35,10 @@ class SSIAuthService:
             )
         self.config = _build_config()
         self.client = MarketDataClient(self.config)
-        self._token: Optional[str] = None
+        self._token: str | None = None
 
     @property
-    def token(self) -> Optional[str]:
+    def token(self) -> str | None:
         return self._token
 
     async def authenticate(self) -> str:
