@@ -111,4 +111,30 @@ class BasisPoint(BaseModel):
     futures_price: float
     spot_value: float
     basis: float  # futures_price - spot_value
+    basis_pct: float = 0.0  # basis / spot_value * 100
     is_premium: bool  # basis > 0
+
+
+class DerivativesData(BaseModel):
+    """Real-time snapshot of a VN30F futures contract."""
+
+    symbol: str
+    last_price: float = 0.0
+    change: float = 0.0
+    change_pct: float = 0.0
+    volume: int = 0  # cumulative session volume
+    bid_price: float = 0.0
+    ask_price: float = 0.0
+    basis: float = 0.0  # futures_price - VN30_spot
+    basis_pct: float = 0.0  # basis / VN30_spot * 100
+    is_premium: bool = True  # basis > 0
+    last_updated: datetime | None = None
+
+
+class MarketSnapshot(BaseModel):
+    """Unified snapshot of all market data for API consumers."""
+
+    quotes: dict[str, "SessionStats"] = {}
+    indices: dict[str, IndexData] = {}
+    foreign: ForeignSummary | None = None
+    derivatives: DerivativesData | None = None
