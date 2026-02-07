@@ -8,6 +8,7 @@ from app.config import settings
 from app.services.futures_resolver import get_futures_symbols
 from app.services.ssi_auth_service import SSIAuthService
 from app.services.ssi_market_service import SSIMarketService
+from app.services.market_data_processor import MarketDataProcessor
 from app.services.ssi_stream_service import SSIStreamService
 
 logger = logging.getLogger(__name__)
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 auth_service = SSIAuthService()
 market_service = SSIMarketService(auth_service)
 stream_service = SSIStreamService(auth_service, market_service)
+processor = MarketDataProcessor()
 
 # Cached at startup
 vn30_symbols: list[str] = []
@@ -42,6 +44,10 @@ async def lifespan(app: FastAPI):
         *[f"X:{fs}" for fs in futures_symbols],
         "B:ALL",
     ]
+    # 4. Register data processing callbacks
+    stream_service.on_quote(processor.handle_quote)
+    stream_service.on_trade(processor.handle_trade)
+
     logger.info("Subscribing channels: %s", channels)
     await stream_service.connect(channels)
 
