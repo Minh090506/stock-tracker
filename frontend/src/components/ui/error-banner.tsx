@@ -12,7 +12,7 @@ export function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
       {onRetry && (
         <button
           onClick={onRetry}
-          className="ml-4 px-3 py-1 text-xs font-medium bg-red-800 hover:bg-red-700 rounded transition-colors"
+          className="ml-4 px-3 py-2 text-xs font-medium bg-red-800 hover:bg-red-700 rounded transition-colors"
         >
           Retry
         </button>

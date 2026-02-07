@@ -58,7 +58,7 @@ export function VolumeDetailTable({ stats }: VolumeDetailTableProps) {
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm min-w-175">
         <thead className="bg-gray-800">
           <tr>
             <th onClick={() => handleSort("symbol")} className="px-4 py-3 text-left cursor-pointer hover:bg-gray-700">

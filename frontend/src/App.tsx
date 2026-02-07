@@ -1,7 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import { AppLayoutShell } from "./components/layout/app-layout-shell";
-import { PageLoadingSkeleton } from "./components/ui/page-loading-skeleton";
+import { ErrorBoundary } from "./components/ui/error-boundary";
+import { ForeignFlowSkeleton } from "./components/ui/foreign-flow-skeleton";
+import { VolumeAnalysisSkeleton } from "./components/ui/volume-analysis-skeleton";
+import { SignalsSkeleton } from "./components/ui/signals-skeleton";
 
 const ForeignFlowPage = lazy(() => import("./pages/foreign-flow-page"));
 const VolumeAnalysisPage = lazy(() => import("./pages/volume-analysis-page"));
@@ -16,25 +19,31 @@ export default function App() {
           <Route
             path="/foreign-flow"
             element={
-              <Suspense fallback={<PageLoadingSkeleton />}>
-                <ForeignFlowPage />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<ForeignFlowSkeleton />}>
+                  <ForeignFlowPage />
+                </Suspense>
+              </ErrorBoundary>
             }
           />
           <Route
             path="/volume"
             element={
-              <Suspense fallback={<PageLoadingSkeleton />}>
-                <VolumeAnalysisPage />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<VolumeAnalysisSkeleton />}>
+                  <VolumeAnalysisPage />
+                </Suspense>
+              </ErrorBoundary>
             }
           />
           <Route
             path="/signals"
             element={
-              <Suspense fallback={<PageLoadingSkeleton />}>
-                <SignalsPage />
-              </Suspense>
+              <ErrorBoundary>
+                <Suspense fallback={<SignalsSkeleton />}>
+                  <SignalsPage />
+                </Suspense>
+              </ErrorBoundary>
             }
           />
         </Route>

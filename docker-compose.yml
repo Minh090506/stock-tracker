@@ -4,10 +4,27 @@ services:
     ports:
       - "8000:8000"
     env_file: ./backend/.env
+    environment:
+      - DATABASE_URL=postgresql://stock:stock@timescaledb:5432/stock_tracker
+      - CORS_ORIGINS=http://localhost
     depends_on:
       timescaledb:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    networks:
+      - app-network
 
   timescaledb:
     image: timescale/timescaledb:latest-pg16
@@ -25,13 +42,52 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    networks:
+      - app-network
 
   frontend:
     build: ./frontend
     ports:
       - "80:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    networks:
+      - app-network
 
 volumes:
   pgdata:
+  redis-data:
+
+networks:
+  app-network:
+    driver: bridge

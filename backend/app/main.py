@@ -5,6 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
+
 from app.database.connection import db
 from app.database.batch_writer import BatchWriter
 from app.routers.history_router import router as history_router
@@ -80,7 +83,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=settings.cors_origins_list,
     allow_methods=["*"],
     allow_headers=["*"],
 )

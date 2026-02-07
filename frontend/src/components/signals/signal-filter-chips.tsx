@@ -26,7 +26,7 @@ export function SignalFilterChips({ active, onChange }: SignalFilterChipsProps) 
             key={option.value}
             onClick={() => onChange(option.value)}
             className={`
-              px-4 py-2 rounded-lg text-sm transition-colors
+              px-4 py-2.5 rounded-lg text-sm transition-colors
               ${
                 isActive
                   ? "bg-white text-gray-900 font-medium"

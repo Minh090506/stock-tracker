@@ -1,7 +1,7 @@
 /** Foreign Flow analysis page showing investor net flow, top movers, heatmap, and detail table. */
 
 import { useForeignFlow } from "../hooks/use-foreign-flow";
-import { PageLoadingSkeleton } from "../components/ui/page-loading-skeleton";
+import { ForeignFlowSkeleton } from "../components/ui/foreign-flow-skeleton";
 import { ErrorBanner } from "../components/ui/error-banner";
 import { ForeignFlowSummaryCards } from "../components/foreign/foreign-flow-summary-cards";
 import { ForeignTopMoversBarChart } from "../components/foreign/foreign-top-movers-bar-chart";
@@ -12,7 +12,7 @@ export default function ForeignFlowPage() {
   const { data, loading, error, refresh } = useForeignFlow();
 
   if (loading) {
-    return <PageLoadingSkeleton />;
+    return <ForeignFlowSkeleton />;
   }
 
   if (error) {

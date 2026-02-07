@@ -16,6 +16,16 @@ class Settings(BaseSettings):
     app_port: int = 8000
     debug: bool = False
 
+    # CORS — comma-separated origins
+    cors_origins: str = "http://localhost:5173"
+
+    # Logging
+    log_level: str = "INFO"
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
     # Channel R (foreign investor) assumed update interval for speed calculation
     channel_r_interval_ms: int = 1000
 
