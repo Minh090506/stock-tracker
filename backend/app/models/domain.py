@@ -6,7 +6,7 @@ Used by Phase 3+ data processing services (TradeClassifier, ForeignTracker, etc.
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class TradeType(str, Enum):
@@ -42,7 +42,7 @@ class SessionStats(BaseModel):
 
 
 class ForeignInvestorData(BaseModel):
-    """Foreign investor tracking with computed deltas and speed."""
+    """Foreign investor tracking with computed deltas, speed, and acceleration."""
 
     symbol: str
     buy_volume: int = 0
@@ -55,7 +55,29 @@ class ForeignInvestorData(BaseModel):
     current_room: int = 0
     buy_speed_per_min: float = 0.0
     sell_speed_per_min: float = 0.0
+    buy_acceleration: float = 0.0  # speed change rate (vol/min^2)
+    sell_acceleration: float = 0.0
     last_updated: datetime | None = None
+
+
+class ForeignSummary(BaseModel):
+    """VN30 aggregate foreign flow + top movers."""
+
+    total_buy_value: float = 0.0
+    total_sell_value: float = 0.0
+    total_net_value: float = 0.0
+    total_buy_volume: int = 0
+    total_sell_volume: int = 0
+    total_net_volume: int = 0
+    top_buy: list[ForeignInvestorData] = []
+    top_sell: list[ForeignInvestorData] = []
+
+
+class IntradayPoint(BaseModel):
+    """Single point for sparkline chart."""
+
+    timestamp: datetime
+    value: float
 
 
 class IndexData(BaseModel):
@@ -69,7 +91,16 @@ class IndexData(BaseModel):
     total_volume: int = 0
     advances: int = 0
     declines: int = 0
+    no_changes: int = 0
+    intraday: list[IntradayPoint] = []
     last_updated: datetime | None = None
+
+    @computed_field
+    @property
+    def advance_ratio(self) -> float:
+        """Breadth: advance / (advance + decline). 0.0 if no data."""
+        total = self.advances + self.declines
+        return self.advances / total if total > 0 else 0.0
 
 
 class BasisPoint(BaseModel):

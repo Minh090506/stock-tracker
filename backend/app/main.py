@@ -47,6 +47,8 @@ async def lifespan(app: FastAPI):
     # 4. Register data processing callbacks
     stream_service.on_quote(processor.handle_quote)
     stream_service.on_trade(processor.handle_trade)
+    stream_service.on_foreign(processor.handle_foreign)
+    stream_service.on_index(processor.handle_index)
 
     logger.info("Subscribing channels: %s", channels)
     await stream_service.connect(channels)

@@ -8,9 +8,16 @@
 
 ## Overview
 - **Priority:** P0
-- **Status:** pending
-- **Effort:** 6h
+- **Status:** in_progress (3A+3B complete, 3C pending)
+- **Effort:** 6h (4h spent on 3A+3B, 2h remaining for 3C)
 - **MOST CRITICAL PHASE** - Build QuoteCache, TradeClassifier (CORRECTED), ForeignInvestorTracker (REWRITTEN), IndexTracker, DerivativesTracker, SessionAggregator.
+
+## Phase 3B Completion (2026-02-07)
+- ✓ ForeignInvestorTracker: delta, speed, acceleration, reconnect handling, top movers, VN30 aggregate
+- ✓ IndexTracker: breadth ratio, intraday sparkline, multi-index support
+- ✓ Tests: 56 new tests (29 foreign + 27 index), all passing
+- ✓ Integration: wired into MarketDataProcessor and main.py callbacks
+- 📊 Code review: APPROVED (see reports/code-reviewer-260207-1149-phase-3b-implementation-review.md)
 
 ## Critical Corrections from Old Plan
 
@@ -422,20 +429,21 @@ async def daily_reset_loop():
 ```
 
 ## Todo List
-- [ ] Create QuoteCache (bid/ask cache from Quote messages)
-- [ ] Create TradeClassifier (CORRECTED: LastVol + cached bid/ask)
-- [ ] Create SessionAggregator (mua/ban totals per symbol)
-- [ ] Create ForeignInvestorTracker (REWRITTEN: Channel R deltas + speed)
-- [ ] Create IndexTracker (VN30/VNINDEX from Channel MI)
-- [ ] Create DerivativesTracker (basis = futures - spot)
-- [ ] Create MarketDataProcessor orchestrator
-- [ ] Wire processor callbacks into SSI stream
-- [ ] Add daily reset at 15:00 VN
-- [ ] Unit test: classify with known bid=10, ask=11, price=11 → MUA
-- [ ] Unit test: classify with price=10 → BAN
-- [ ] Unit test: foreign delta computation
-- [ ] Unit test: basis calculation
-- [ ] Test ATO/ATC trades classified as NEUTRAL
+- [x] Create QuoteCache (bid/ask cache from Quote messages) — Phase 3A COMPLETE
+- [x] Create TradeClassifier (CORRECTED: LastVol + cached bid/ask) — Phase 3A COMPLETE
+- [x] Create SessionAggregator (mua/ban totals per symbol) — Phase 3A COMPLETE
+- [x] Create ForeignInvestorTracker (REWRITTEN: Channel R deltas + speed + accel) — Phase 3B COMPLETE
+- [x] Create IndexTracker (VN30/VNINDEX from Channel MI + breadth + sparkline) — Phase 3B COMPLETE
+- [ ] Create DerivativesTracker (basis = futures - spot) — Phase 3C PENDING
+- [x] Create MarketDataProcessor orchestrator — Phase 3A+3B COMPLETE
+- [x] Wire processor callbacks into SSI stream — Phase 3B COMPLETE
+- [ ] Add daily reset at 15:00 VN — Phase 3C PENDING
+- [x] Unit test: classify with known bid=10, ask=11, price=11 → MUA — Phase 3A COMPLETE
+- [x] Unit test: classify with price=10 → BAN — Phase 3A COMPLETE
+- [x] Unit test: foreign delta computation — Phase 3B COMPLETE (29 tests)
+- [x] Unit test: index breadth, sparkline — Phase 3B COMPLETE (27 tests)
+- [ ] Unit test: basis calculation — Phase 3C PENDING
+- [x] Test ATO/ATC trades classified as NEUTRAL — Phase 3A COMPLETE
 
 ## Success Criteria
 - Trade classifier uses `last_vol` (per-trade), NOT `total_vol` (cumulative)
