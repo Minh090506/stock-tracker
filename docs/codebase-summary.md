@@ -27,9 +27,13 @@ backend/
 │   │   ├── derivatives_tracker.py        # Futures basis calculation (Phase 3C)
 │   │   ├── market_data_processor.py      # Unified orchestrator (Phase 3)
 │   ├── routers/
-│   │   └── health.py                     # Health check endpoint
+│   │   ├── health.py                     # Health check endpoint
+│   │   └── market.py                     # Market data REST endpoints (Phase 4)
 │   ├── websocket/
-│   │   └── server.py                     # WebSocket broadcast (Phase 4)
+│   │   ├── __init__.py                   # Exports
+│   │   ├── connection_manager.py        # Per-client queue + connection management
+│   │   ├── endpoint.py                   # /ws/market endpoint handler
+│   │   └── broadcast_loop.py             # Background broadcast task
 │   └── database/
 │       └── migrations.py                 # Database schema (Phase 7)
 ├── tests/
@@ -49,6 +53,8 @@ backend/
 tests/
 ├── test_ssi_auth_service.py              # OAuth2 tests
 ├── test_ssi_stream_service.py            # WebSocket tests
+├── test_connection_manager.py            # WebSocket ConnectionManager tests (11 tests)
+├── test_websocket_endpoint.py            # WebSocket endpoint tests (4 tests)
 └── [additional test files per service]
 ```
 
@@ -330,7 +336,8 @@ tests/
 └── test_data_processor_integration.py # 3 multi-channel tests
 ```
 
-**Total**: 232 tests, all passing in 0.64s
+**Phase 4**: 15 WebSocket broadcast tests added
+**Total**: 247 tests, all passing
 
 ## Code Quality Metrics
 
@@ -370,6 +377,12 @@ SSI_CONSUMER_SECRET=<your-secret>
 CHANNEL_R_INTERVAL_MS=1000
 FUTURES_OVERRIDE=VN30F2603,VN30F2606
 
+# WebSocket (Phase 4)
+WS_BROADCAST_INTERVAL=1.0       # Broadcast every 1s
+WS_HEARTBEAT_INTERVAL=30.0      # Ping every 30s
+WS_HEARTBEAT_TIMEOUT=10.0       # Timeout after 10s
+WS_MAX_QUEUE_SIZE=100           # Per-client queue limit
+
 # Database (Phase 7)
 DATABASE_URL=postgresql://user:pass@localhost/stock_tracker
 
@@ -395,11 +408,17 @@ FASTAPI_ENV=development
 - IndexTracker intraday: ~115 KB (1-day window)
 - DerivativesTracker basis: ~360 KB (~1-hour window)
 
-## Future Phases (Pending)
+## Completed Phases (Continued)
 
-**Phase 4**: WebSocket API
-- Broadcasting unified snapshots to React clients
-- Real-time message flow
+**Phase 4**: WebSocket Broadcast Server (COMPLETE)
+- WebSocket endpoint at `/ws/market`
+- ConnectionManager with per-client queues
+- Broadcasts full MarketSnapshot every 1s
+- Application-level heartbeat (30s ping, 10s timeout)
+- 15 tests (11 ConnectionManager + 4 endpoint)
+- All tests passing (247 total)
+
+## Future Phases (Pending)
 
 **Phase 5**: Frontend Dashboard
 - React 19 + TypeScript

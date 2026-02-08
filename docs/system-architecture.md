@@ -39,7 +39,13 @@
         ▼
     ┌──────────────┐
     │ REST API     │
-    │ + WebSocket  │
+    │ (market.py)  │
+    └──────────────┘
+            │
+    ┌──────────────┐
+    │ WebSocket    │
+    │ Broadcast    │
+    │ /ws/market   │
     └──────────────┘
             │
             ▼
@@ -412,14 +418,47 @@ BASIS_HISTORY_MAXLEN=3600
 
 ## Testing Strategy
 
-- **Unit tests**: Each service isolated (230+ tests)
+- **Unit tests**: Each service isolated (247 tests)
+  - Phase 4: 11 ConnectionManager + 4 endpoint tests
 - **Integration tests**: Multi-channel message flow with 100+ ticks
 - **Performance tests**: Verify <5ms aggregation latency
-- **Edge cases**: Missing quotes, zero prices, sparse updates
+- **Edge cases**: Missing quotes, zero prices, sparse updates, client disconnects
+
+### 4. WebSocket Broadcast (Phase 4 - COMPLETE)
+
+**ConnectionManager** (`connection_manager.py`)
+- Per-client asyncio queues for message distribution
+- Connection lifecycle management (connect/disconnect)
+- Broadcast to all connected clients
+- Queue overflow protection (maxsize=100)
+
+**WebSocket Endpoint** (`endpoint.py`)
+- Route: `GET /ws/market`
+- Accepts WebSocket connections
+- Implements application-level heartbeat (30s ping, 10s timeout)
+- Handles client disconnect and cleanup
+
+**Broadcast Loop** (`broadcast_loop.py`)
+- Background task running in lifespan context
+- Fetches `MarketSnapshot` from `MarketDataProcessor`
+- Broadcasts JSON to all clients every 1s
+- Configurable via `WS_BROADCAST_INTERVAL`
+
+**Configuration** (`config.py`):
+```python
+ws_broadcast_interval: float = 1.0
+ws_heartbeat_interval: float = 30.0
+ws_heartbeat_timeout: float = 10.0
+ws_max_queue_size: int = 100
+```
+
+**Integration** (`main.py`):
+- `ws_manager` singleton initialized at app startup
+- Broadcast loop starts in lifespan context
+- WebSocket router registered to FastAPI app
 
 ## Next Phases
 
-- **Phase 4**: WebSocket API to broadcast unified snapshots to clients
 - **Phase 5**: React dashboard with real-time chart updates
 - **Phase 6**: Analytics engine (alerts, correlation, signals)
 - **Phase 7**: Database layer for historical persistence

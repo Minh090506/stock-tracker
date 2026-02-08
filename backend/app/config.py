@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # Futures contract override (e.g., "VN30F2603" to force specific contract)
     futures_override: str = ""
 
+    # WebSocket broadcast
+    ws_broadcast_interval: float = 1.0    # seconds between broadcasts
+    ws_heartbeat_interval: float = 30.0   # seconds between ping frames
+    ws_heartbeat_timeout: float = 10.0    # seconds to wait for pong
+    ws_queue_size: int = 50               # per-client queue maxsize
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

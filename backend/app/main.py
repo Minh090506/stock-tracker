@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,9 @@ from app.services.ssi_auth_service import SSIAuthService
 from app.services.ssi_market_service import SSIMarketService
 from app.services.market_data_processor import MarketDataProcessor
 from app.services.ssi_stream_service import SSIStreamService
+from app.websocket import ConnectionManager
+from app.websocket.broadcast_loop import broadcast_loop
+from app.websocket.endpoint import router as ws_router
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +30,7 @@ market_service = SSIMarketService(auth_service)
 stream_service = SSIStreamService(auth_service, market_service)
 processor = MarketDataProcessor()
 batch_writer = BatchWriter(db)
+ws_manager = ConnectionManager()
 
 # Cached at startup
 vn30_symbols: list[str] = []
@@ -67,9 +72,19 @@ async def lifespan(app: FastAPI):
     logger.info("Subscribing channels: %s", channels)
     await stream_service.connect(channels)
 
+    # 7. Start WebSocket broadcast loop
+    broadcast_task = asyncio.create_task(broadcast_loop(processor, ws_manager))
+    logger.info("WebSocket broadcast loop started")
+
     yield
 
     # Shutdown (reverse order)
+    broadcast_task.cancel()
+    try:
+        await broadcast_task
+    except asyncio.CancelledError:
+        pass
+    await ws_manager.disconnect_all()
     await stream_service.disconnect()
     await batch_writer.stop()
     await db.disconnect()
@@ -90,6 +105,7 @@ app.add_middleware(
 
 app.include_router(history_router)
 app.include_router(market_router)
+app.include_router(ws_router)
 
 
 @app.get("/health")

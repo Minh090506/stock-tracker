@@ -51,7 +51,7 @@ Previous plan: `/Users/minh/plans/260206-1341-stock-tracker-system/`
 | 1 | [Project Scaffolding](./phase-01-project-scaffolding.md) | 3h | complete | - |
 | 2 | [SSI Integration & Stream Demux](./phase-02-ssi-integration-stream-demux.md) | 5h | complete | P1 |
 | 3 | [Data Processing Core](./phase-03-data-processing-core.md) | 8h | complete | P2 |
-| 4 | [Backend WS Server + REST API](./phase-04-backend-websocket-rest-api.md) | 4h | pending | P3 |
+| 4 | [Backend WS Server + REST API](./phase-04-backend-websocket-rest-api.md) | 4h | in_progress | P3 |
 | 5 | [Frontend Dashboard](./phase-05-frontend-dashboard.md) | 6h | pending | P4 |
 | 6 | [Analytics Engine](./phase-06-analytics-engine.md) | 5h | pending | P3,P4 |
 | 7 | [Database Persistence](./phase-07-database-persistence.md) | 5h | pending | P1 |
