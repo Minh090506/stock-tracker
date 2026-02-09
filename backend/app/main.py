@@ -17,6 +17,7 @@ from app.services.ssi_auth_service import SSIAuthService
 from app.services.ssi_market_service import SSIMarketService
 from app.services.market_data_processor import MarketDataProcessor
 from app.services.ssi_stream_service import SSIStreamService
+from app.analytics import AlertService
 from app.websocket import ConnectionManager
 from app.websocket.data_publisher import DataPublisher
 from app.websocket.router import router as ws_router
@@ -29,6 +30,7 @@ market_service = SSIMarketService(auth_service)
 stream_service = SSIStreamService(auth_service, market_service)
 processor = MarketDataProcessor()
 batch_writer = BatchWriter(db)
+alert_service = AlertService()
 market_ws_manager = ConnectionManager()
 foreign_ws_manager = ConnectionManager()
 index_ws_manager = ConnectionManager()

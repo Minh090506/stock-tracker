@@ -23,30 +23,42 @@
                             │
         ┌───────────────────┼───────────────────┐
         ▼                   ▼                   ▼
-    ┌─────────┐      ┌──────────────┐    ┌───────────┐
-    │ Market  │      │ Market Data  │    │ Database  │
-    │ Data    │      │ Processor    │    │ Layer     │
-    │ Services│      │              │    │ (asyncpg) │
-    └─────────┘      └──────────────┘    └───────────┘
-        │                   │
-        │                   ├── QuoteCache
-        │                   ├── TradeClassifier
-        │                   ├── SessionAggregator
-        │                   ├── ForeignInvestorTracker
-        │                   ├── IndexTracker
+    ┌─────────┐      ┌──────────────┐    ┌───────────┐    ┌──────────────┐
+    │ Market  │      │ Market Data  │    │ Analytics │    │ Database     │
+    │ Data    │      │ Processor    │    │ Engine    │    │ Layer        │
+    │ Services│      │              │    │ (Phase 6) │    │ (asyncpg)    │
+    └─────────┘      └──────────────┘    └───────────┘    └──────────────┘
+        │                   │                   │
+        │                   ├── QuoteCache      ├── AlertService (in-memory buffer)
+        │                   ├── TradeClassifier │    ├── Alert models (AlertType, AlertSeverity)
+        │                   ├── SessionAggregator│   ├── Dedup (60s by type+symbol)
+        │                   ├── ForeignInvestorTracker │ Subscribe/notify pattern
+        │                   ├── IndexTracker     └── TODO: alert_generator.py
         │                   └── DerivativesTracker
         │
         ▼
-    ┌──────────────┐
-    │ REST API     │
-    │ (market.py)  │
-    └──────────────┘
+    ┌──────────────────────────────────┐
+    │ REST API Routers (Phase 5B)      │
+    ├──────────────────────────────────┤
+    │ market_router.py:                │
+    │ - GET /api/market/snapshot       │
+    │ - GET /api/market/foreign-detail │
+    │ - GET /api/market/volume-stats   │
+    │ - GET /api/market/basis-trend    │
+    │ history_router.py:               │
+    │ - GET /api/history/{symbol}/{...}│
+    │ - GET /api/history/index/{name}  │
+    │ - GET /api/history/derivatives/..│
+    └──────────────────────────────────┘
             │
-    ┌──────────────┐
-    │ WebSocket    │
-    │ Broadcast    │
-    │ /ws/market   │
-    └──────────────┘
+    ┌──────────────────┐
+    │ WebSocket Router │
+    │ Multi-Channel    │
+    ├──────────────────┤
+    │ /ws/market       │
+    │ /ws/foreign      │
+    │ /ws/index        │
+    └──────────────────┘
             │
             ▼
     ┌──────────────┐
@@ -425,14 +437,32 @@ INDEX_INTRADAY_MAXLEN=1440
 BASIS_HISTORY_MAXLEN=3600
 ```
 
+## REST API Endpoints (Phase 5B)
+
+### Market Data Endpoints (`market_router.py`)
+- `GET /api/market/snapshot` → MarketSnapshot (quotes, indices, foreign, derivatives)
+- `GET /api/market/foreign-detail` → ForeignSummary (aggregate + top movers)
+- `GET /api/market/volume-stats` → Volume breakdown by type
+- `GET /api/market/basis-trend?minutes=30` → BasisPoint[] (filtered history)
+
+### Historical Data Endpoints (`history_router.py`)
+- `GET /api/history/{symbol}/candles?interval=1m&limit=100` → OHLC bars
+- `GET /api/history/{symbol}/ticks?limit=500` → Individual trades
+- `GET /api/history/{symbol}/foreign?days=5` → Foreign investor history
+- `GET /api/history/{symbol}/foreign/daily` → Daily foreign summary
+- `GET /api/history/index/{name}?days=5` → Index historical values
+- `GET /api/history/derivatives/{contract}?days=5` → Futures contract history
+
 ## Testing Strategy
 
-- **Unit tests**: Each service isolated (254 tests)
-  - Phase 4: 11 ConnectionManager + 4 endpoint + 7 multi-channel router tests
+- **Unit tests**: Each service isolated (326 tests)
+  - Phase 4: 11 ConnectionManager + 4 endpoint + 7 multi-channel router + 15 DataPublisher = 37 tests
+  - Phase 5B: 12 market_router + 26 history_router = 38 tests
 - **Integration tests**: Multi-channel message flow with 100+ ticks
 - **Performance tests**: Verify <5ms aggregation latency
 - **Edge cases**: Missing quotes, zero prices, sparse updates, client disconnects
 - **WebSocket tests**: Auth validation, rate limiting, channel isolation
+- **REST tests**: Endpoint validation, parameter filtering, data consistency
 
 ### 4. WebSocket Multi-Channel Router (Phase 4 - COMPLETE)
 
@@ -653,9 +683,31 @@ useDerivativesData() hook
 - Chart renders <100ms with 200 points
 - Memory: ~20KB for 30-min history
 
+## Phase 6: Analytics Engine (In Progress ~20%)
+
+**Analytics Package** (`app/analytics/`)
+- **alert_models.py** (~40 LOC)
+  - `AlertType` enum: FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT
+  - `AlertSeverity` enum: INFO, WARNING, CRITICAL
+  - `Alert` model: id, alert_type, severity, symbol, message, timestamp, data (dict)
+- **alert_service.py** (~96 LOC)
+  - In-memory alert buffer: deque(maxlen=500)
+  - Dedup: skip same (alert_type, symbol) within 60s
+  - get_recent_alerts(limit, type_filter?, severity_filter?) → list[Alert]
+  - subscribe(callback) / unsubscribe(callback) - pub/sub pattern
+  - reset_daily() - clears buffer and cooldowns at 15:00 VN
+
+**Integration** (`app/main.py`):
+- `alert_service = AlertService()` singleton initialized in lifespan
+
+**Remaining Work**:
+- Alert generation logic (monitors processor → registers alerts)
+- REST endpoints: GET /api/alerts, POST /api/alerts/acknowledge
+- WebSocket channel: /ws/alerts (broadcast new alerts)
+- Frontend alert UI (toast, banner, sidebar panel)
+
 ## Next Phases
 
-- **Phase 5**: React dashboard with real-time chart updates (useWebSocket integration)
-- **Phase 6**: Analytics engine (alerts, correlation, signals)
+- **Phase 6**: Analytics engine (alerts, correlation, signals) — 20% complete
 - **Phase 7**: Database layer for historical persistence
 - **Phase 8**: Deployment and load testing

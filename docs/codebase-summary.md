@@ -26,6 +26,10 @@ backend/
 │   │   ├── index_tracker.py              # Index tracking (Phase 3B)
 │   │   ├── derivatives_tracker.py        # Futures basis calculation (Phase 3C)
 │   │   ├── market_data_processor.py      # Unified orchestrator (Phase 3)
+│   ├── analytics/
+│   │   ├── __init__.py                   # Package exports (Alert, AlertType, AlertSeverity, AlertService)
+│   │   ├── alert_models.py               # Alert domain models (AlertType, AlertSeverity, Alert)
+│   │   └── alert_service.py              # In-memory alert buffer with dedup + subscriber pattern
 │   ├── routers/
 │   │   ├── health.py                     # Health check endpoint
 │   │   └── market.py                     # Market data REST endpoints (Phase 4)
@@ -57,6 +61,8 @@ tests/
 ├── test_connection_manager.py            # WebSocket ConnectionManager tests (11 tests)
 ├── test_websocket_router.py              # Multi-channel router tests (7 tests)
 ├── test_data_publisher.py                # DataPublisher throttle + notification tests (15 tests)
+├── test_market_router.py                 # Market REST endpoint tests (12 tests)
+├── test_history_router.py                # History REST endpoint tests (26 tests)
 └── [additional test files per service]
 ```
 
@@ -194,7 +200,7 @@ def get_derivatives_data() → DerivativesData | None
 def reset_daily()  # Called at 15:00 VN
 ```
 
-**Tests**: 232 total tests passing (Phase 3A+3B+3C included)
+**Tests**: 326 total tests passing (all phases including Phase 5B routers)
 
 ## Service Architecture
 
@@ -566,30 +572,32 @@ FASTAPI_ENV=development
 - Event-driven DataPublisher with per-channel throttle (500ms default)
 - SSI connection status notifications (disconnect/reconnect)
 - Application-level heartbeat (30s ping, 10s timeout)
-- 37 tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
-- All tests passing (288 total)
+- 37 tests (11 ConnectionManager + 7 router + 4 endpoint + 15 DataPublisher)
+- All tests passing (269 total after Phase 4)
 
-**Phase 5**: VN30 Price Board + Derivatives Panel (COMPLETE)
-- Price board: Real-time VN30 stock monitoring with sparklines
+**Phase 5**: VN30 Price Board + Derivatives Panel + REST API Routers (COMPLETE)
+- Price board: Real-time VN30 stock monitoring with sparklines + market session indicator
 - Derivatives: Basis analysis panel with trend chart + convergence indicator
+- REST API Routers: Market + History endpoints with comprehensive test coverage
+  - `market_router.py`: `/snapshot`, `/foreign-detail`, `/volume-stats`, `/basis-trend`
+  - `history_router.py`: `/history/{symbol}/{candles,ticks,foreign}`, `/index/{name}`, `/derivatives/{contract}`
 - WebSocket integration with sparkline chart and sortable price table
 - Active buy/sell/neutral color coding per VN market conventions
 - Flash animation for price changes; loading skeleton
 - All TypeScript compiles clean; zero new dependencies
-- Files: 13 new frontend components, 2 hooks, 1 types update
+- Files: 13 frontend components, 2 hooks, 2 routers, 38 router tests, 1 types update
 - Code review grade: A-
+- Test coverage: 326 total tests (38 new router tests)
 
 ## Future Phases (Pending)
 
-**Phase 5**: Frontend Dashboard
-- React 19 + TypeScript
-- TradingView Lightweight Charts
-- Real-time chart updates
-
-**Phase 6**: Analytics Engine
-- NN alerts
-- Correlation analysis
-- Basis divergence signals
+**Phase 6**: Analytics Engine (In Progress ~20%)
+- Alert models: AlertType (FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT)
+- Alert severity: INFO, WARNING, CRITICAL
+- AlertService: in-memory buffer (deque maxlen=500), 60s dedup by (type, symbol)
+- Subscriber pattern for alert notifications (e.g. WebSocket broadcast)
+- Daily reset clears buffer and cooldowns
+- TODO: Alert generation logic, REST/WS endpoints
 
 **Phase 7**: Database Persistence
 - Trade history
