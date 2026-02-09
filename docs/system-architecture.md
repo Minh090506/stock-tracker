@@ -576,7 +576,9 @@ useWebSocket<T>("market", options)
 - Per-channel throttle (500ms trailing-edge, configurable)
 - Zero overhead when no clients connected
 
-## Frontend Price Board (Phase 5A)
+## Frontend Dashboard (Phase 5)
+
+### Price Board (Phase 5A - COMPLETE)
 
 **Price Board Data Flow**:
 ```
@@ -615,6 +617,41 @@ usePriceBoardData() hook
 - Flash animation on price change (CSS transition)
 - Table rows virtualized for large lists (future optimization)
 - WS latency <100ms typical
+
+### Derivatives Basis Panel (Phase 5B - COMPLETE)
+
+**Derivatives Data Flow**:
+```
+React Component (DerivativesPage)
+    ↓
+useDerivativesData() hook
+    ├─ WS Market Snapshot → derivatives field
+    └─ REST Polling (10s) → GET /api/market/basis-trend?minutes=30
+        ↓
+        FastAPI market_router.py
+        ↓
+        DerivativesTracker.get_basis_trend(minutes=30)
+        ├─ Filters basis_history by timestamp
+        └─ Returns BasisPoint[]
+```
+
+**Frontend Components**:
+- `derivatives-summary-cards.tsx` - Contract, price, basis, premium/discount
+- `basis-trend-area-chart.tsx` - Recharts AreaChart (30-min basis history)
+- `convergence-indicator.tsx` - Basis convergence/divergence + slope analysis
+- `open-interest-display.tsx` - Open interest (N/A from SSI, graceful display)
+- `derivatives-skeleton.tsx` - Loading skeleton
+
+**Basis Chart Features**:
+- Red area fill: Premium (basis > 0)
+- Green area fill: Discount (basis < 0)
+- Recharts AreaChart with responsive container
+- 30-min sliding window (~200 data points)
+
+**Performance**:
+- Basis trend polling: 10s interval
+- Chart renders <100ms with 200 points
+- Memory: ~20KB for 30-min history
 
 ## Next Phases
 

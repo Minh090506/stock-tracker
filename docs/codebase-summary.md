@@ -386,6 +386,11 @@ class PriceData(BaseModel):
 - Returns: `{ priceData: PriceData[], sparklines: dict[symbol → number[]], status, isLive }`
 - Uses useWebSocket("market") internally
 
+**useDerivativesData** (`frontend/src/hooks/use-derivatives-data.ts`) — Derivatives Specific
+- Combines WS market snapshot + REST basis-trend polling
+- Returns: `{ derivatives, basisTrend, status, isLive }`
+- Polls `GET /api/market/basis-trend?minutes=30` every 10s
+
 **Type Definition**:
 ```typescript
 export type WebSocketChannel = "market" | "foreign" | "index";
@@ -431,6 +436,7 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 
 **UI Components** (`frontend/src/components/ui/`)
 - `price-board-skeleton.tsx` - Loading skeleton with 10 placeholder rows
+- `derivatives-skeleton.tsx` - Derivatives page loading skeleton
 - error-boundary.tsx - Error handling wrapper
 - error-banner.tsx - Error message display
 - Loading skeletons (volume, foreign, signals, page)
@@ -443,9 +449,15 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 - foreign/ - Foreign investor flow charts and tables
 - volume/ - Trade volume analysis
 - signals/ - Alert/signal display
+- derivatives/ - Derivatives basis tracking
+  - `derivatives-summary-cards.tsx` - Futures contract overview
+  - `basis-trend-area-chart.tsx` - Historical basis chart
+  - `convergence-indicator.tsx` - Basis convergence/divergence
+  - `open-interest-display.tsx` - Open interest display (N/A from SSI)
 
 **Pages** (`frontend/src/pages/`)
 - `price-board-page.tsx` - Price board page component (live/polling indicator)
+- `derivatives-page.tsx` - Derivatives basis analysis panel
 - dashboard-page.tsx, foreign-flow-page.tsx, etc.
 
 ### Utilities
@@ -557,13 +569,14 @@ FASTAPI_ENV=development
 - 37 tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
 - All tests passing (288 total)
 
-**Phase 5**: VN30 Price Board (COMPLETE)
-- First frontend dashboard feature — real-time stock price monitoring
+**Phase 5**: VN30 Price Board + Derivatives Panel (COMPLETE)
+- Price board: Real-time VN30 stock monitoring with sparklines
+- Derivatives: Basis analysis panel with trend chart + convergence indicator
 - WebSocket integration with sparkline chart and sortable price table
 - Active buy/sell/neutral color coding per VN market conventions
 - Flash animation for price changes; loading skeleton
 - All TypeScript compiles clean; zero new dependencies
-- Files: 6 new frontend components, 1 hook, 1 types update
+- Files: 13 new frontend components, 2 hooks, 1 types update
 - Code review grade: A-
 
 ## Future Phases (Pending)

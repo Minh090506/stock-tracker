@@ -1,7 +1,7 @@
 # Development Roadmap
 
 **Last Updated**: 2026-02-09
-**Overall Progress**: 62.5% (5 of 8 phases complete)
+**Overall Progress**: 65% (5.2 of 8 phases complete)
 
 ## Phase Overview
 
@@ -212,14 +212,15 @@ WS_MAX_CONNECTIONS_PER_IP=5     # Rate limiting per IP
 
 ### Phase 5B: Frontend Dashboard: Additional Components 🔄
 
-**Estimated Duration**: 1-2 weeks (next phase after price board)
+**Estimated Duration**: 1-2 weeks (next phase)
 **Priority**: P2
 **Effort**: 8h planning + implementation
+**Status**: 20% (Derivatives panel complete)
 
 **Objectives**:
 - [ ] Build index charts (VN30, VNINDEX with sparklines)
 - [ ] Add foreign investor tracking panel
-- [ ] Implement futures basis analyzer
+- [x] Implement futures basis analyzer (COMPLETE)
 - [ ] Create trade statistics dashboard (Mua/Ban/Neutral breakdown)
 
 **Components to Build**:
@@ -233,10 +234,16 @@ Dashboard/
 │   ├── FlowChart (buy/sell speed)
 │   ├── TopBuyers/Sellers
 │   └── RoomUsage
-└── DerivativesPanel/ (uses useWebSocket("market"))
+└── DerivativesPanel/ ✅ COMPLETE
     ├── BasisChart (historical basis curve)
     └── PremiumDiscount indicator
 ```
+
+**Completed** (2026-02-09):
+- [x] `/derivatives` page with 4 components
+- [x] `GET /api/market/basis-trend` endpoint
+- [x] useDerivativesData hook (WS + REST polling)
+- [x] Navigation sidebar updated
 
 **Dependencies**: Phase 5 complete ✓
 **Blocking**: Phase 6
@@ -495,4 +502,4 @@ alerts (
 
 ---
 
-**Current Status**: Phase 5 ✅ COMPLETE | 288 tests passing | Ready for Phase 5B (Additional Dashboard Components)
+**Current Status**: Phase 5B 20% | 288 tests passing | Derivatives panel ✅ | Next: Index + Foreign panels
