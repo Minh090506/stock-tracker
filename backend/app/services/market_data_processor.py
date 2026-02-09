@@ -29,8 +29,8 @@ from app.services.trade_classifier import TradeClassifier
 
 logger = logging.getLogger(__name__)
 
-# Subscriber callback type: async fn receiving event name + data
-SubscriberCallback = Callable
+# Subscriber callback type: fn(channel_name) -> None
+SubscriberCallback = Callable[[str], None]
 
 
 class MarketDataProcessor:
@@ -42,7 +42,9 @@ class MarketDataProcessor:
         self.aggregator = SessionAggregator()
         self.foreign_tracker = ForeignInvestorTracker()
         self.index_tracker = IndexTracker()
-        self.derivatives_tracker = DerivativesTracker(self.index_tracker, self.quote_cache)
+        self.derivatives_tracker = DerivativesTracker(
+            self.index_tracker, self.quote_cache
+        )
         self._subscribers: list[SubscriberCallback] = []
 
     # -- Stream callbacks --
@@ -50,6 +52,7 @@ class MarketDataProcessor:
     async def handle_quote(self, msg: SSIQuoteMessage):
         """Cache latest quote for bid/ask lookup by trade classifier."""
         self.quote_cache.update(msg)
+        self._notify("market")
 
     async def handle_trade(self, msg: SSITradeMessage):
         """Classify trade and accumulate session stats.
@@ -59,19 +62,25 @@ class MarketDataProcessor:
         """
         if msg.symbol.startswith("VN30F"):
             self.derivatives_tracker.update_from_trade(msg)
+            self._notify("market")
             return None, None
 
         classified = self.classifier.classify(msg)
         stats = self.aggregator.add_trade(classified)
+        self._notify("market")
         return classified, stats
 
     async def handle_foreign(self, msg: SSIForeignMessage):
         """Track foreign investor delta, speed, and acceleration."""
-        return self.foreign_tracker.update(msg)
+        result = self.foreign_tracker.update(msg)
+        self._notify("foreign")
+        return result
 
     async def handle_index(self, msg: SSIIndexMessage):
         """Track index values (VN30, VNINDEX, HNX)."""
-        return self.index_tracker.update(msg)
+        result = self.index_tracker.update(msg)
+        self._notify("index")
+        return result
 
     # -- Unified API --
 
@@ -96,7 +105,7 @@ class MarketDataProcessor:
         """Current derivatives snapshot."""
         return self.derivatives_tracker.get_data()
 
-    # -- Subscriber push (Phase 4 WebSocket) --
+    # -- Subscriber push --
 
     def subscribe(self, callback: SubscriberCallback):
         """Register a callback for real-time update push."""
@@ -105,6 +114,14 @@ class MarketDataProcessor:
     def unsubscribe(self, callback: SubscriberCallback):
         """Remove a subscriber callback."""
         self._subscribers = [cb for cb in self._subscribers if cb is not callback]
+
+    def _notify(self, channel: str):
+        """Notify all subscribers of a data change on a channel."""
+        for cb in self._subscribers:
+            try:
+                cb(channel)
+            except Exception:
+                logger.exception("Subscriber notification error")
 
     # -- Session management --
 

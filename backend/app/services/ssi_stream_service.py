@@ -41,6 +41,9 @@ class SSIStreamService:
         self._background_tasks: set[asyncio.Task] = set()
         # Reconciliation callback set by the app layer (Phase 3)
         self._reconcile_callback: Callable | None = None
+        # Disconnect/reconnect callbacks for downstream notification
+        self._disconnect_callback: Callable | None = None
+        self._reconnect_callback: Callable | None = None
         # Main event loop ref — captured at connect() time for cross-thread dispatch
         self._loop: asyncio.AbstractEventLoop | None = None
 
@@ -64,6 +67,14 @@ class SSIStreamService:
     def set_reconcile_callback(self, cb: Callable):
         """Set callback for reconnect reconciliation (Phase 3)."""
         self._reconcile_callback = cb
+
+    def set_disconnect_callback(self, cb: Callable):
+        """Set callback fired when SSI stream disconnects/crashes."""
+        self._disconnect_callback = cb
+
+    def set_reconnect_callback(self, cb: Callable):
+        """Set callback fired after SSI stream reconnects."""
+        self._reconnect_callback = cb
 
     # -- Connection lifecycle --
 
@@ -167,6 +178,12 @@ class SSIStreamService:
             logger.exception("Reconnect reconciliation failed. First deltas may be inaccurate.")
         finally:
             self._reconnecting = False
+            # Notify downstream of reconnection
+            if self._reconnect_callback:
+                try:
+                    self._reconnect_callback()
+                except Exception:
+                    logger.exception("Reconnect callback error")
 
     @property
     def is_reconnecting(self) -> bool:
@@ -181,3 +198,9 @@ class SSIStreamService:
         exc = task.exception()
         if exc:
             logger.error("SSI stream task crashed: %s", exc, exc_info=exc)
+        # Notify downstream of disconnection
+        if self._disconnect_callback:
+            try:
+                self._disconnect_callback()
+            except Exception:
+                logger.exception("Disconnect callback error")

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -19,7 +18,7 @@ from app.services.ssi_market_service import SSIMarketService
 from app.services.market_data_processor import MarketDataProcessor
 from app.services.ssi_stream_service import SSIStreamService
 from app.websocket import ConnectionManager
-from app.websocket.broadcast_loop import broadcast_loop
+from app.websocket.data_publisher import DataPublisher
 from app.websocket.router import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -74,20 +73,23 @@ async def lifespan(app: FastAPI):
     logger.info("Subscribing channels: %s", channels)
     await stream_service.connect(channels)
 
-    # 7. Start WebSocket broadcast loop (feeds 3 channels)
-    broadcast_task = asyncio.create_task(
-        broadcast_loop(processor, market_ws_manager, foreign_ws_manager, index_ws_manager)
+    # 7. Start event-driven WebSocket publisher (replaces poll-based broadcast loop)
+    publisher = DataPublisher(
+        processor, market_ws_manager, foreign_ws_manager, index_ws_manager
     )
-    logger.info("WebSocket broadcast loop started")
+    publisher.start()
+    processor.subscribe(publisher.notify)
+
+    # 8. Wire SSI disconnect/reconnect notifications
+    stream_service.set_disconnect_callback(publisher.on_ssi_disconnect)
+    stream_service.set_reconnect_callback(publisher.on_ssi_reconnect)
+    logger.info("WebSocket data publisher started")
 
     yield
 
     # Shutdown (reverse order)
-    broadcast_task.cancel()
-    try:
-        await broadcast_task
-    except asyncio.CancelledError:
-        pass
+    processor.unsubscribe(publisher.notify)
+    publisher.stop()
     await market_ws_manager.disconnect_all()
     await foreign_ws_manager.disconnect_all()
     await index_ws_manager.disconnect_all()

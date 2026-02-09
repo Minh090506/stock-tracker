@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     futures_override: str = ""
 
     # WebSocket broadcast
-    ws_broadcast_interval: float = 1.0    # seconds between broadcasts
+    ws_broadcast_interval: float = 1.0    # seconds between broadcasts (legacy)
+    ws_throttle_interval_ms: int = 500    # per-channel throttle for event-driven publisher
     ws_heartbeat_interval: float = 30.0   # seconds between ping frames
     ws_heartbeat_timeout: float = 10.0    # seconds to wait for pong
     ws_queue_size: int = 50               # per-client queue maxsize
