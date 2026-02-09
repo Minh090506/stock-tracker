@@ -1,6 +1,6 @@
 # Development Roadmap
 
-**Last Updated**: 2026-02-08
+**Last Updated**: 2026-02-09
 **Overall Progress**: 50% (4 of 8 phases complete)
 
 ## Phase Overview
@@ -10,7 +10,7 @@
 | 1 | Project Scaffolding | ✅ COMPLETE | 100% | ✓ | Setup | FastAPI + config + Docker |
 | 2 | SSI Integration & Stream Demux | ✅ COMPLETE | 100% | ✓ | 60+ | OAuth2 + WebSocket + field normalization |
 | 3 | Data Processing Core | ✅ COMPLETE | 100% | ✓ | 232 | 3A/3B/3C: Trade, Foreign, Index, Derivatives |
-| 4 | Backend WS + REST API | ✅ COMPLETE | 100% | ✓ | 247 | WebSocket broadcast server at /ws/market |
+| 4 | Backend WS + REST API | ✅ COMPLETE | 100% | ✓ | 269 | WebSocket multi-channel + event-driven publisher |
 | 5 | Frontend Dashboard | 🔄 PENDING | 0% | 2-3w | - | React 19 + Vite + charts |
 | 6 | Analytics Engine | 🔄 PENDING | 0% | 1-2w | - | Alerts, signals, correlation |
 | 7 | Database Persistence | 🔄 PENDING | 0% | 1-2w | - | PostgreSQL schema + ORM |
@@ -103,52 +103,66 @@
 
 ### Phase 4: Backend WebSocket + REST API ✅
 
-**Dates**: 2026-02-08
-**Status**: Complete
-**Duration**: 1 day
-**Tests**: 247 total (15 new Phase 4 tests)
+**Dates**: 2026-02-08 to 2026-02-09
+**Status**: Complete (Enhanced with event-driven publisher)
+**Duration**: 2 days
+**Tests**: 269 total (37 new Phase 4 tests)
 
 **Deliverables**:
-- [x] WebSocket broadcast server at `/ws/market`
+- [x] Multi-channel WebSocket router (3 channels)
 - [x] ConnectionManager with per-client queues
-- [x] Background broadcast loop (1s interval)
+- [x] Event-driven DataPublisher with per-channel throttle (500ms default)
+- [x] SSI connection status notifications (disconnect/reconnect)
 - [x] Application-level heartbeat (30s ping, 10s timeout)
-- [x] Client connection lifecycle management
-- [x] 4 WebSocket configuration settings
+- [x] Token-based authentication (optional)
+- [x] IP-based rate limiting
+- [x] 7 WebSocket configuration settings (added WS_THROTTLE_INTERVAL_MS)
 
-**WebSocket Endpoint**:
+**WebSocket Channels**:
 ```
-GET /ws/market
-- Accepts WebSocket connections
-- Broadcasts MarketSnapshot JSON every 1s
-- Sends ping every 30s (client timeout after 10s)
-- Per-client queue (maxsize=100)
+GET /ws/market?token=xxx
+- Full MarketSnapshot (quotes + indices + foreign + derivatives)
+
+GET /ws/foreign?token=xxx
+- ForeignSummary only (aggregate + top movers)
+
+GET /ws/index?token=xxx
+- VN30 + VNINDEX IndexData only
 ```
 
 **Files Created**:
 - `app/websocket/connection_manager.py` (84 LOC)
-- `app/websocket/endpoint.py` (52 LOC)
-- `app/websocket/broadcast_loop.py` (31 LOC)
+- `app/websocket/router.py` (138 LOC)
+- `app/websocket/broadcast_loop.py` (56 LOC, DEPRECATED)
+- `app/websocket/data_publisher.py` (158 LOC)
 - `app/websocket/__init__.py` (exports)
 - `tests/test_connection_manager.py` (11 tests)
-- `tests/test_websocket_endpoint.py` (4 tests)
+- `tests/test_websocket_router.py` (7 tests)
+- `tests/test_data_publisher.py` (15 tests)
 
 **Files Modified**:
-- `app/config.py` - Added 4 WS settings
-- `app/main.py` - ws_manager singleton, broadcast loop, router registration
-- `app/websocket/__init__.py` - Exports
+- `app/config.py` - Added ws_throttle_interval_ms (default 500)
+- `app/main.py` - DataPublisher initialized, processor.subscribe() wiring
+- `app/services/market_data_processor.py` - Added subscriber pattern (_notify after each update)
+- `app/services/ssi_stream_service.py` - Added disconnect/reconnect status callbacks
+
+**Files Deprecated**:
+- `app/websocket/broadcast_loop.py` - Replaced by DataPublisher event-driven model
 
 **Configuration Added**:
 ```python
-WS_BROADCAST_INTERVAL=1.0       # Broadcast every 1s
+WS_BROADCAST_INTERVAL=1.0       # [DEPRECATED] Legacy poll interval
+WS_THROTTLE_INTERVAL_MS=500     # Per-channel event throttle (DataPublisher)
 WS_HEARTBEAT_INTERVAL=30.0      # Ping every 30s
 WS_HEARTBEAT_TIMEOUT=10.0       # Timeout after 10s
-WS_MAX_QUEUE_SIZE=100           # Per-client queue limit
+WS_QUEUE_SIZE=50                # Per-client queue limit
+WS_AUTH_TOKEN=                  # Optional token (empty = disabled)
+WS_MAX_CONNECTIONS_PER_IP=5     # Rate limiting per IP
 ```
 
-**Test Results**: 247 tests passing (232 Phase 1-3 + 15 Phase 4)
+**Test Results**: 269 tests passing (232 Phase 1-3 + 37 Phase 4)
 **Review**: ✓ Approved
-**Key Achievement**: Full-duplex real-time broadcast to multiple clients
+**Key Achievement**: Event-driven reactive broadcasting with per-channel throttle
 
 **Dependencies**: Phase 3 complete ✓
 **Unblocks**: Phase 5 (Frontend Dashboard)
@@ -306,7 +320,7 @@ alerts (
 
 **CI/CD Pipeline** (GitHub Actions):
 - Run linting on push
-- Run 232 tests on PR
+- Run 254 tests on PR
 - Build Docker images
 - Deploy to staging on merge to develop
 - Manual approval for production
@@ -327,7 +341,7 @@ alerts (
 ### Completed
 - ✅ **2026-02-06**: Phase 1 + Phase 2 scaffolding
 - ✅ **2026-02-07**: Phase 3 (3A/3B/3C) - Trade, Foreign, Index, Derivatives
-- ✅ **2026-02-08**: Phase 4 - WebSocket broadcast server
+- ✅ **2026-02-08 to 2026-02-09**: Phase 4 - WebSocket multi-channel router
 
 ### Next 4 Weeks (Projected)
 - **Week 1 (2026-02-10 to 2026-02-14)**: Phase 4 (Backend API + WebSocket)
@@ -358,11 +372,15 @@ alerts (
 ## Success Criteria by Phase
 
 ### Phase 4 ✅
-- [x] WebSocket broadcasts MarketSnapshot every 1s
+- [x] Multi-channel WebSocket router (3 channels)
+- [x] Token-based authentication (optional)
+- [x] IP-based rate limiting
 - [x] Connection/disconnection handled cleanly
 - [x] Per-client queues prevent blocking
 - [x] Heartbeat prevents zombie connections
-- [x] 15 tests passing (11 ConnectionManager + 4 endpoint)
+- [x] Event-driven reactive broadcasting (DataPublisher)
+- [x] SSI connection status notifications
+- [x] 37 tests passing (11 ConnectionManager + 7 router + 4 legacy + 15 DataPublisher)
 
 ### Phase 5
 - [x] Dashboard loads in <3 seconds
@@ -384,7 +402,7 @@ alerts (
 
 ### Phase 8
 - [x] Load test passes 1000 TPS sustained
-- [x] All 232+ tests passing in CI/CD
+- [x] All 269+ tests passing in CI/CD
 - [x] Production deployment automated
 - [x] Monitoring/alerting operational
 
@@ -440,4 +458,4 @@ alerts (
 
 ---
 
-**Current Status**: Phase 4 ✅ COMPLETE | 247 tests passing | Ready for Phase 5
+**Current Status**: Phase 4 ✅ COMPLETE | 269 tests passing | Ready for Phase 5

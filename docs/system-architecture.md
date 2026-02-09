@@ -418,44 +418,62 @@ BASIS_HISTORY_MAXLEN=3600
 
 ## Testing Strategy
 
-- **Unit tests**: Each service isolated (247 tests)
-  - Phase 4: 11 ConnectionManager + 4 endpoint tests
+- **Unit tests**: Each service isolated (254 tests)
+  - Phase 4: 11 ConnectionManager + 4 endpoint + 7 multi-channel router tests
 - **Integration tests**: Multi-channel message flow with 100+ ticks
 - **Performance tests**: Verify <5ms aggregation latency
 - **Edge cases**: Missing quotes, zero prices, sparse updates, client disconnects
+- **WebSocket tests**: Auth validation, rate limiting, channel isolation
 
-### 4. WebSocket Broadcast (Phase 4 - COMPLETE)
+### 4. WebSocket Multi-Channel Router (Phase 4 - COMPLETE)
+
+**WebSocket Router** (`router.py`)
+- Three specialized channels for efficient data delivery:
+  - `/ws/market` — Full MarketSnapshot (quotes + indices + foreign + derivatives)
+  - `/ws/foreign` — ForeignSummary only (aggregate + top movers)
+  - `/ws/index` — VN30 + VNINDEX IndexData only
+- Token-based authentication via `?token=xxx` query param (optional)
+- Rate limiting: Max connections per IP (default: 5)
+- Shared lifecycle: auth → rate limit → connect → heartbeat → read loop → cleanup
 
 **ConnectionManager** (`connection_manager.py`)
-- Per-client asyncio queues for message distribution
+- Per-client asyncio queues for non-blocking message distribution
 - Connection lifecycle management (connect/disconnect)
 - Broadcast to all connected clients
-- Queue overflow protection (maxsize=100)
+- Queue overflow protection (maxsize=50)
 
-**WebSocket Endpoint** (`endpoint.py`)
-- Route: `GET /ws/market`
-- Accepts WebSocket connections
-- Implements application-level heartbeat (30s ping, 10s timeout)
-- Handles client disconnect and cleanup
-
-**Broadcast Loop** (`broadcast_loop.py`)
-- Background task running in lifespan context
-- Fetches `MarketSnapshot` from `MarketDataProcessor`
-- Broadcasts JSON to all clients every 1s
-- Configurable via `WS_BROADCAST_INTERVAL`
+**DataPublisher** (`data_publisher.py`) — Event-Driven Broadcasting
+- Replaces poll-based broadcast loop with reactive push model
+- Per-channel trailing-edge throttle (default 500ms, configurable via `WS_THROTTLE_INTERVAL_MS`)
+- Processor notifies subscribers via `_notify(channel)` after each update
+- Immediate broadcast if throttle window expired; deferred broadcast otherwise
+- SSI disconnect/reconnect status notifications to all channels
+- Zero overhead when no clients connected
 
 **Configuration** (`config.py`):
 ```python
-ws_broadcast_interval: float = 1.0
-ws_heartbeat_interval: float = 30.0
-ws_heartbeat_timeout: float = 10.0
-ws_max_queue_size: int = 100
+# Broadcasting
+ws_broadcast_interval: float = 1.0      # [DEPRECATED] legacy poll interval
+ws_throttle_interval_ms: int = 500      # per-channel event throttle (DataPublisher)
+ws_heartbeat_interval: float = 30.0     # ping interval
+ws_heartbeat_timeout: float = 10.0      # client timeout
+ws_queue_size: int = 50                 # per-client queue limit
+
+# Security
+ws_auth_token: str = ""                 # empty = auth disabled
+ws_max_connections_per_ip: int = 5      # rate limiting
 ```
 
 **Integration** (`main.py`):
-- `ws_manager` singleton initialized at app startup
-- Broadcast loop starts in lifespan context
+- Three ConnectionManager singletons: `market_ws_manager`, `foreign_ws_manager`, `index_ws_manager`
+- DataPublisher initialized with processor + managers in lifespan context
+- Processor subscribes DataPublisher via `processor.subscribe(publisher.notify)`
 - WebSocket router registered to FastAPI app
+
+**Security Features**:
+- Query param token validation (disabled if `ws_auth_token=""`)
+- IP-based rate limiting with connection counting
+- Automatic cleanup on disconnect
 
 ## Next Phases
 

@@ -32,8 +32,9 @@ backend/
 │   ├── websocket/
 │   │   ├── __init__.py                   # Exports
 │   │   ├── connection_manager.py        # Per-client queue + connection management
-│   │   ├── endpoint.py                   # /ws/market endpoint handler
-│   │   └── broadcast_loop.py             # Background broadcast task
+│   │   ├── router.py                     # Multi-channel router (/ws/market, /ws/foreign, /ws/index)
+│   │   ├── broadcast_loop.py             # [DEPRECATED] Legacy poll-based broadcast (replaced by data_publisher)
+│   │   └── data_publisher.py             # Event-driven publisher with per-channel throttle
 │   └── database/
 │       └── migrations.py                 # Database schema (Phase 7)
 ├── tests/
@@ -54,7 +55,8 @@ tests/
 ├── test_ssi_auth_service.py              # OAuth2 tests
 ├── test_ssi_stream_service.py            # WebSocket tests
 ├── test_connection_manager.py            # WebSocket ConnectionManager tests (11 tests)
-├── test_websocket_endpoint.py            # WebSocket endpoint tests (4 tests)
+├── test_websocket_router.py              # Multi-channel router tests (7 tests)
+├── test_data_publisher.py                # DataPublisher throttle + notification tests (15 tests)
 └── [additional test files per service]
 ```
 
@@ -336,8 +338,8 @@ tests/
 └── test_data_processor_integration.py # 3 multi-channel tests
 ```
 
-**Phase 4**: 15 WebSocket broadcast tests added
-**Total**: 247 tests, all passing
+**Phase 4**: 37 WebSocket tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
+**Total**: 269 tests, all passing
 
 ## Code Quality Metrics
 
@@ -378,10 +380,13 @@ CHANNEL_R_INTERVAL_MS=1000
 FUTURES_OVERRIDE=VN30F2603,VN30F2606
 
 # WebSocket (Phase 4)
-WS_BROADCAST_INTERVAL=1.0       # Broadcast every 1s
+WS_BROADCAST_INTERVAL=1.0       # [DEPRECATED] Legacy poll interval
+WS_THROTTLE_INTERVAL_MS=500     # Per-channel event throttle (DataPublisher)
 WS_HEARTBEAT_INTERVAL=30.0      # Ping every 30s
 WS_HEARTBEAT_TIMEOUT=10.0       # Timeout after 10s
-WS_MAX_QUEUE_SIZE=100           # Per-client queue limit
+WS_QUEUE_SIZE=50                # Per-client queue limit
+WS_AUTH_TOKEN=                  # Optional token auth (empty = disabled)
+WS_MAX_CONNECTIONS_PER_IP=5     # Rate limiting per IP
 
 # Database (Phase 7)
 DATABASE_URL=postgresql://user:pass@localhost/stock_tracker
@@ -410,13 +415,16 @@ FASTAPI_ENV=development
 
 ## Completed Phases (Continued)
 
-**Phase 4**: WebSocket Broadcast Server (COMPLETE)
-- WebSocket endpoint at `/ws/market`
-- ConnectionManager with per-client queues
-- Broadcasts full MarketSnapshot every 1s
+**Phase 4**: WebSocket Multi-Channel Router (COMPLETE)
+- Three specialized channels: `/ws/market`, `/ws/foreign`, `/ws/index`
+- Token-based authentication (optional, query param `?token=xxx`)
+- Rate limiting: max connections per IP (default: 5)
+- ConnectionManager with per-client queues (maxsize=50)
+- Event-driven DataPublisher with per-channel throttle (500ms default)
+- SSI connection status notifications (disconnect/reconnect)
 - Application-level heartbeat (30s ping, 10s timeout)
-- 15 tests (11 ConnectionManager + 4 endpoint)
-- All tests passing (247 total)
+- 37 tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
+- All tests passing (269 total)
 
 ## Future Phases (Pending)
 
