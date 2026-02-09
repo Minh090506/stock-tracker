@@ -215,6 +215,14 @@ SessionStats
 ├── neutral_volume, total_volume
 └── last_updated
 
+PriceData (Phase 5A)
+├── last_price
+├── change (from ref)
+├── change_pct
+├── ref_price (prior close)
+├── ceiling (TVT)
+└── floor (STC)
+
 ForeignInvestorData
 ├── symbol
 ├── buy_volume, sell_volume, net_volume
@@ -255,6 +263,7 @@ DerivativesData
 
 MarketSnapshot (Unified API)
 ├── quotes: dict[symbol → SessionStats]
+├── prices: dict[symbol → PriceData] (Phase 5A)
 ├── indices: dict[index_id → IndexData]
 ├── foreign: ForeignSummary
 └── derivatives: DerivativesData
@@ -475,9 +484,140 @@ ws_max_connections_per_ip: int = 5      # rate limiting
 - IP-based rate limiting with connection counting
 - Automatic cleanup on disconnect
 
+## Frontend WebSocket Client Integration
+
+### useWebSocket Hook
+
+**Purpose**: Generic, reusable React hook for real-time WebSocket data with fallback resilience.
+
+**Features**:
+- **Multi-channel support**: "market" (full snapshot), "foreign" (flow data), "index" (indices only)
+- **Auto-reconnect**: Exponential backoff (1s → 30s cap) with configurable max attempts
+- **REST fallback**: After 3 failed WS attempts, switches to polling; retries WS every 30s
+- **Generation counter**: Prevents stale polling responses from overwriting fresh WS data after reconnect
+- **Token auth**: Optional Bearer token via query parameter
+- **Lifecycle**: Clean cleanup on unmount; resets on channel/token change
+
+**Connection Lifecycle**:
+```
+1. CONNECTING (initial WebSocket attempt)
+   ↓
+2. CONNECTED (WebSocket established, data flows live)
+   │
+   ├─ [ERROR] → exponential backoff retry
+   │            (1s → 2s → 4s → 8s → 16s → 30s → 30s → ...)
+   │
+   └─ [3 attempts failed] → START REST FALLBACK
+                            └─ Poll every 5s (configurable)
+                            └─ Retry WS every 30s
+                               └─ [WS success] → RECONNECTED, kill polling
+```
+
+**Return Object**:
+- `data: T | null` - Latest message (WS or REST)
+- `status: ConnectionStatus` - "connecting" | "connected" | "disconnected"
+- `error: Error | null` - Last error encountered
+- `isLive: boolean` - true = WS active, false = REST fallback
+- `reconnect: () => void` - Manual reconnect (resets attempts counter)
+
+**Configuration**:
+```typescript
+{
+  token?: string;                    // Auth token (appended as ?token=)
+  fallbackFetcher?: () => Promise<T>; // REST endpoint for polling fallback
+  fallbackIntervalMs?: number;       // Poll interval (default: 5000ms)
+  maxReconnectAttempts?: number;     // Attempts before fallback (default: 3)
+}
+```
+
+### Data Flow (Browser → Backend)
+
+```
+React Component
+    ↓
+useWebSocket<T>("market", options)
+    ├─ [Live] WebSocket (/ws/market?token=xxx)
+    │          ↓
+    │          FastAPI WebSocket Router
+    │          ├─ Auth token validation
+    │          ├─ Rate limiting (5 conns/IP default)
+    │          ├─ Connection lifecycle (heartbeat, queue management)
+    │          └─ Event-driven DataPublisher (per-channel throttle 500ms)
+    │             ↓
+    │             MarketDataProcessor.handle_* (Quotes, Trades, Foreign, Index)
+    │             ↓
+    │             Emit MarketSnapshot (or ForeignSummary, IndexData)
+    │             ↓
+    │             Back to Browser (< 5ms latency)
+    │
+    └─ [Fallback] REST API Polling
+       └─ GET /api/market/snapshot
+          ↓
+          Same processor (but polled every 5s)
+          ↓
+          Browser receives stale-but-recent data
+          └─ [WS retries every 30s] → Eventually reconnect
+```
+
+### Backend Integration Points
+
+**ConnectionManager** (`connection_manager.py`)
+- Per-client asyncio queues (non-blocking broadcast)
+- Connection lifecycle hooks
+- Rate limiting enforcement
+
+**WebSocket Router** (`router.py`)
+- Endpoint: `GET /ws/{channel}?token=xxx`
+- Channels: market, foreign, index
+- Token validation, heartbeat, cleanup
+
+**DataPublisher** (`data_publisher.py`)
+- Event-driven broadcasting (replaces poll-based loop)
+- Per-channel throttle (500ms trailing-edge, configurable)
+- Zero overhead when no clients connected
+
+## Frontend Price Board (Phase 5A)
+
+**Price Board Data Flow**:
+```
+React Component (PriceBoardPage)
+    ↓
+usePriceBoardData() hook
+    ├─ Filters MarketSnapshot.prices to VN30 symbols
+    ├─ Maintains per-symbol sparkline history (50 points max)
+    └─ Uses useWebSocket("market") internally
+        ↓
+        WebSocket /ws/market
+        ↓
+        FastAPI RouterWebSocket, ConnectionManager, DataPublisher
+        ↓
+        MarketDataProcessor
+        ├─ Updates _price_cache on each trade
+        ├─ Merges with QuoteCache (ref, ceiling, floor)
+        └─ Returns MarketSnapshot.prices
+```
+
+**Frontend Components**:
+- `price-board-sparkline.tsx` - Inline SVG, renders 50-point history
+- `price-board-table.tsx` - Sortable columns, row flash on update
+- `price-board-skeleton.tsx` - Loading placeholder with shimmer
+- `price-board-page.tsx` - Page layout with live/polling indicator
+
+**UI Color Coding** (VN Market Convention):
+- Red = Up (price increase)
+- Green = Down (price decrease)
+- Fuchsia = Ceiling (TVT)
+- Cyan = Floor (STC)
+
+**Performance**:
+- Sparkline capped at 50 points (memory efficient)
+- Flash animation on price change (CSS transition)
+- Table rows virtualized for large lists (future optimization)
+- WS latency <100ms typical
+
 ## Next Phases
 
-- **Phase 5**: React dashboard with real-time chart updates
+- **Phase 5**: React dashboard with real-time chart updates (useWebSocket integration)
 - **Phase 6**: Analytics engine (alerts, correlation, signals)
 - **Phase 7**: Database layer for historical persistence
 - **Phase 8**: Deployment and load testing

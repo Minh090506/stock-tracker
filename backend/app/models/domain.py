@@ -41,6 +41,17 @@ class SessionStats(BaseModel):
     last_updated: datetime | None = None
 
 
+class PriceData(BaseModel):
+    """Last trade price + reference levels for a single stock."""
+
+    last_price: float = 0.0
+    change: float = 0.0       # last_price - ref_price (from SSI)
+    change_pct: float = 0.0   # ratio_change (from SSI, already %)
+    ref_price: float = 0.0    # reference/opening price
+    ceiling: float = 0.0      # price ceiling (tran)
+    floor: float = 0.0        # price floor (san)
+
+
 class ForeignInvestorData(BaseModel):
     """Foreign investor tracking with computed deltas, speed, and acceleration."""
 
@@ -135,6 +146,7 @@ class MarketSnapshot(BaseModel):
     """Unified snapshot of all market data for API consumers."""
 
     quotes: dict[str, "SessionStats"] = {}
+    prices: dict[str, "PriceData"] = {}
     indices: dict[str, IndexData] = {}
     foreign: ForeignSummary | None = None
     derivatives: DerivativesData | None = None

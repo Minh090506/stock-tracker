@@ -15,6 +15,17 @@ export interface SessionStats {
   last_updated: string | null;
 }
 
+// -- Price data --
+
+export interface PriceData {
+  last_price: number;
+  change: number;
+  change_pct: number;
+  ref_price: number;
+  ceiling: number;
+  floor: number;
+}
+
 // -- Foreign investor --
 
 export interface ForeignInvestorData {
@@ -85,6 +96,7 @@ export interface DerivativesData {
 
 export interface MarketSnapshot {
   quotes: Record<string, SessionStats>;
+  prices: Record<string, PriceData>;
   indices: Record<string, IndexData>;
   foreign: ForeignSummary | null;
   derivatives: DerivativesData | null;

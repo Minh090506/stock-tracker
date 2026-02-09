@@ -12,6 +12,7 @@ from app.models.domain import (
     DerivativesData,
     ForeignSummary,
     MarketSnapshot,
+    PriceData,
     SessionStats,
 )
 from app.models.ssi_messages import (
@@ -46,6 +47,8 @@ class MarketDataProcessor:
             self.index_tracker, self.quote_cache
         )
         self._subscribers: list[SubscriberCallback] = []
+        # Price cache: symbol -> (last_price, change, ratio_change)
+        self._price_cache: dict[str, tuple[float, float, float]] = {}
 
     # -- Stream callbacks --
 
@@ -64,6 +67,11 @@ class MarketDataProcessor:
             self.derivatives_tracker.update_from_trade(msg)
             self._notify("market")
             return None, None
+
+        # Cache latest price data from trade
+        self._price_cache[msg.symbol] = (
+            msg.last_price, msg.change, msg.ratio_change
+        )
 
         classified = self.classifier.classify(msg)
         stats = self.aggregator.add_trade(classified)
@@ -85,9 +93,22 @@ class MarketDataProcessor:
     # -- Unified API --
 
     def get_market_snapshot(self) -> MarketSnapshot:
-        """All quotes + indices + foreign + derivatives in one response."""
+        """All quotes + prices + indices + foreign + derivatives."""
+        prices: dict[str, PriceData] = {}
+        for symbol, (last_price, change, ratio_change) in self._price_cache.items():
+            ref, ceiling, floor = self.quote_cache.get_price_refs(symbol)
+            prices[symbol] = PriceData(
+                last_price=last_price,
+                change=change,
+                change_pct=ratio_change,
+                ref_price=ref,
+                ceiling=ceiling,
+                floor=floor,
+            )
+
         return MarketSnapshot(
             quotes=self.aggregator.get_all_stats(),
+            prices=prices,
             indices=self.index_tracker.get_all(),
             foreign=self.foreign_tracker.get_summary(),
             derivatives=self.derivatives_tracker.get_data(),
@@ -131,4 +152,5 @@ class MarketDataProcessor:
         self.foreign_tracker.reset()
         self.index_tracker.reset()
         self.derivatives_tracker.reset()
+        self._price_cache.clear()
         logger.info("Session data reset")

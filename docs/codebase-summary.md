@@ -341,6 +341,129 @@ tests/
 **Phase 4**: 37 WebSocket tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
 **Total**: 269 tests, all passing
 
+## Data Model — PriceData (Phase 5A)
+
+**PriceData** — Per-symbol price snapshot for price board:
+```python
+# backend/models/domain.py
+class PriceData(BaseModel):
+    last_price: float      # Latest trade price
+    change: float          # Price change from ref
+    change_pct: float      # Percentage change
+    ref_price: float       # Reference price (prior close)
+    ceiling: float         # Daily ceiling (TVT)
+    floor: float           # Daily floor (STC)
+```
+
+**MarketSnapshot Update**:
+- Added `prices: dict[str, PriceData]` field
+- Populated from `_price_cache` merged with QuoteCache ref/ceiling/floor at snapshot time
+
+**Price Cache Lifecycle**:
+- `_price_cache: dict[str, PriceData]` in MarketDataProcessor
+- Updated on every trade (stores last_price, change, change_pct)
+- Merged with Quote ref/ceiling/floor for complete PriceData
+- Cleared on daily reset at 15:00 VN
+
+## Frontend Structure
+
+### Hooks
+
+**useWebSocket** (`frontend/src/hooks/use-websocket.ts`)
+- Generic React hook for WebSocket real-time data
+- Channels: "market" | "foreign" | "index"
+- Auto-reconnect with exponential backoff (1s → 30s cap)
+- REST polling fallback after 3 failed WS attempts
+- Periodic WS retry (30s) while in fallback mode
+- Generation counter prevents stale poll data from overwriting fresh WS data
+- Clean disconnect on unmount
+- Auth token support via query param
+
+**usePriceBoardData** (`frontend/src/hooks/use-price-board-data.ts`) — Price Board Specific
+- Specialized hook for price board with sparkline accumulation
+- Filters MarketSnapshot to VN30 symbols only
+- Maintains per-symbol sparkline history (50 points max)
+- Returns: `{ priceData: PriceData[], sparklines: dict[symbol → number[]], status, isLive }`
+- Uses useWebSocket("market") internally
+
+**Type Definition**:
+```typescript
+export type WebSocketChannel = "market" | "foreign" | "index";
+export type ConnectionStatus = "connecting" | "connected" | "disconnected";
+
+export interface WebSocketResult<T> {
+  data: T | null;                    // Latest parsed message
+  status: ConnectionStatus;           // Connection state
+  error: Error | null;               // Last error
+  isLive: boolean;                   // true = WS active, false = REST fallback
+  reconnect: () => void;             // Manual reconnect trigger
+}
+
+export interface UseWebSocketOptions<T> {
+  token?: string;                    // Auth token query param
+  fallbackFetcher?: () => Promise<T>; // REST polling fallback
+  fallbackIntervalMs?: number;       // Poll interval (default: 5000ms)
+  maxReconnectAttempts?: number;     // Attempts before fallback (default: 3)
+}
+```
+
+**Usage Example**:
+```typescript
+const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
+  "market",
+  {
+    token: authToken,
+    fallbackFetcher: async () => await fetchMarketData(),
+    fallbackIntervalMs: 5000,
+    maxReconnectAttempts: 3,
+  }
+);
+```
+
+### Components
+
+**Price Board** (`frontend/src/components/price-board/`)
+- `price-board-sparkline.tsx` - Inline SVG sparkline chart (50 points max)
+- `price-board-table.tsx` - Sortable table with flash animation + color coding
+  - Columns: Symbol, Last Price, Change, Change %, Ref, Ceiling, Floor, Last Vol, Avg Price
+  - Row flash on price update; VN color coding (red=up, green=down, fuchsia=ceiling, cyan=floor)
+
+**UI Components** (`frontend/src/components/ui/`)
+- `price-board-skeleton.tsx` - Loading skeleton with 10 placeholder rows
+- error-boundary.tsx - Error handling wrapper
+- error-banner.tsx - Error message display
+- Loading skeletons (volume, foreign, signals, page)
+
+**Layout Components** (`frontend/src/components/layout/`)
+- app-sidebar-navigation.tsx - Sidebar menu (updated: "Price Board" as first nav item)
+- app-layout-shell.tsx - Main layout wrapper
+
+**Data Visualization** (`frontend/src/components/`)
+- foreign/ - Foreign investor flow charts and tables
+- volume/ - Trade volume analysis
+- signals/ - Alert/signal display
+
+**Pages** (`frontend/src/pages/`)
+- `price-board-page.tsx` - Price board page component (live/polling indicator)
+- dashboard-page.tsx, foreign-flow-page.tsx, etc.
+
+### Utilities
+
+**api-client** (`frontend/src/utils/api-client.ts`)
+- Centralized API client wrapper
+- REST endpoint abstraction
+
+**format-number** (`frontend/src/utils/format-number.ts`)
+- Number formatting utilities (currency, percentages, etc.)
+
+### Types
+
+**index** (`frontend/src/types/index.ts`)
+- Shared TypeScript interfaces and types
+- API response/request schemas
+- PriceData interface: last_price, change, change_pct, ref_price, ceiling, floor
+- MarketSnapshot updated: prices field (dict[symbol → PriceData])
+
 ## Code Quality Metrics
 
 | Metric | Target | Current |
@@ -350,6 +473,7 @@ tests/
 | Latency (<5ms) | ✓ | ✓ All ops <5ms |
 | Memory Bounded | ✓ | ✓ All capped |
 | Python 3.12 | ✓ | ✓ Modern syntax |
+| React 19 | ✓ | ✓ Latest |
 
 ## Dependencies
 
@@ -424,7 +548,16 @@ FASTAPI_ENV=development
 - SSI connection status notifications (disconnect/reconnect)
 - Application-level heartbeat (30s ping, 10s timeout)
 - 37 tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
-- All tests passing (269 total)
+- All tests passing (288 total)
+
+**Phase 5**: VN30 Price Board (COMPLETE)
+- First frontend dashboard feature — real-time stock price monitoring
+- WebSocket integration with sparkline chart and sortable price table
+- Active buy/sell/neutral color coding per VN market conventions
+- Flash animation for price changes; loading skeleton
+- All TypeScript compiles clean; zero new dependencies
+- Files: 6 new frontend components, 1 hook, 1 types update
+- Code review grade: A-
 
 ## Future Phases (Pending)
 

@@ -17,6 +17,7 @@ from app.models.domain import (  # noqa: F401
     ForeignSummary,
     IndexData,
     IntradayPoint,
+    PriceData,
     SessionStats,
     TradeType,
 )

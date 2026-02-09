@@ -2,10 +2,12 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Suspense, lazy } from "react";
 import { AppLayoutShell } from "./components/layout/app-layout-shell";
 import { ErrorBoundary } from "./components/ui/error-boundary";
+import { PriceBoardSkeleton } from "./components/ui/price-board-skeleton";
 import { ForeignFlowSkeleton } from "./components/ui/foreign-flow-skeleton";
 import { VolumeAnalysisSkeleton } from "./components/ui/volume-analysis-skeleton";
 import { SignalsSkeleton } from "./components/ui/signals-skeleton";
 
+const PriceBoardPage = lazy(() => import("./pages/price-board-page"));
 const ForeignFlowPage = lazy(() => import("./pages/foreign-flow-page"));
 const VolumeAnalysisPage = lazy(() => import("./pages/volume-analysis-page"));
 const SignalsPage = lazy(() => import("./pages/signals-page"));
@@ -15,7 +17,17 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppLayoutShell />}>
-          <Route index element={<Navigate to="/foreign-flow" replace />} />
+          <Route index element={<Navigate to="/price-board" replace />} />
+          <Route
+            path="/price-board"
+            element={
+              <ErrorBoundary>
+                <Suspense fallback={<PriceBoardSkeleton />}>
+                  <PriceBoardPage />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
           <Route
             path="/foreign-flow"
             element={
