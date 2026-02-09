@@ -3,7 +3,7 @@
 Exposes MarketDataProcessor in-memory state via REST for frontend polling.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -33,3 +33,12 @@ async def get_volume_stats():
 
     stats = list(processor.aggregator.get_all_stats().values())
     return {"stats": stats}
+
+
+@router.get("/basis-trend")
+async def get_basis_trend(minutes: int = Query(30, ge=1, le=120)):
+    """Historical basis points from in-memory DerivativesTracker."""
+    from app.main import processor
+
+    points = processor.derivatives_tracker.get_basis_trend(minutes)
+    return [p.model_dump() for p in points]

@@ -80,16 +80,36 @@ export interface IndexData {
 
 // -- Derivatives --
 
+export interface BasisPoint {
+  timestamp: string;
+  futures_symbol: string;
+  futures_price: number;
+  spot_value: number;
+  basis: number;
+  basis_pct: number;
+  is_premium: boolean;
+}
+
 export interface DerivativesData {
   symbol: string;
   last_price: number;
   change: number;
   change_pct: number;
   volume: number;
+  bid_price: number;
+  ask_price: number;
   basis: number;
   basis_pct: number;
   is_premium: boolean;
   last_updated: string | null;
+}
+
+export interface DerivativesHistory {
+  contract: string;
+  timestamp: string;
+  price: number;
+  basis: number;
+  open_interest: number;
 }
 
 // -- Unified snapshot --

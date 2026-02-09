@@ -6,10 +6,12 @@ import { PriceBoardSkeleton } from "./components/ui/price-board-skeleton";
 import { ForeignFlowSkeleton } from "./components/ui/foreign-flow-skeleton";
 import { VolumeAnalysisSkeleton } from "./components/ui/volume-analysis-skeleton";
 import { SignalsSkeleton } from "./components/ui/signals-skeleton";
+import { DerivativesSkeleton } from "./components/ui/derivatives-skeleton";
 
 const PriceBoardPage = lazy(() => import("./pages/price-board-page"));
 const ForeignFlowPage = lazy(() => import("./pages/foreign-flow-page"));
 const VolumeAnalysisPage = lazy(() => import("./pages/volume-analysis-page"));
+const DerivativesPage = lazy(() => import("./pages/derivatives-page"));
 const SignalsPage = lazy(() => import("./pages/signals-page"));
 
 export default function App() {
@@ -44,6 +46,16 @@ export default function App() {
               <ErrorBoundary>
                 <Suspense fallback={<VolumeAnalysisSkeleton />}>
                   <VolumeAnalysisPage />
+                </Suspense>
+              </ErrorBoundary>
+            }
+          />
+          <Route
+            path="/derivatives"
+            element={
+              <ErrorBoundary>
+                <Suspense fallback={<DerivativesSkeleton />}>
+                  <DerivativesPage />
                 </Suspense>
               </ErrorBoundary>
             }
