@@ -4,6 +4,7 @@ import { usePriceBoardData } from "../hooks/use-price-board-data";
 import { PriceBoardSkeleton } from "../components/ui/price-board-skeleton";
 import { ErrorBanner } from "../components/ui/error-banner";
 import { PriceBoardTable } from "../components/price-board/price-board-table";
+import { MarketSessionIndicator } from "../components/price-board/market-session-indicator";
 
 export default function PriceBoardPage() {
   const { rows, loading, error, isLive, status, reconnect } = usePriceBoardData();
@@ -18,7 +19,10 @@ export default function PriceBoardPage() {
     <div className="p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">VN30 Price Board</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-lg font-semibold text-white">VN30 Price Board</h2>
+          <MarketSessionIndicator />
+        </div>
         <div className="flex items-center gap-2 text-xs">
           <span className={`inline-block w-2 h-2 rounded-full ${
             isLive ? "bg-green-500" : "bg-yellow-500"

@@ -601,7 +601,8 @@ usePriceBoardData() hook
 - `price-board-sparkline.tsx` - Inline SVG, renders 50-point history
 - `price-board-table.tsx` - Sortable columns, row flash on update
 - `price-board-skeleton.tsx` - Loading placeholder with shimmer
-- `price-board-page.tsx` - Page layout with live/polling indicator
+- `price-board-page.tsx` - Page layout with live/polling indicator + session status badge
+- `market-session-indicator.tsx` - Session badge (pre-market/ATO/continuous/lunch/ATC/PLO/closed)
 
 **UI Color Coding** (VN Market Convention):
 - Red = Up (price increase)

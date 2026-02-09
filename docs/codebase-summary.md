@@ -427,6 +427,7 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 - `price-board-table.tsx` - Sortable table with flash animation + color coding
   - Columns: Symbol, Last Price, Change, Change %, Ref, Ceiling, Floor, Last Vol, Avg Price
   - Row flash on price update; VN color coding (red=up, green=down, fuchsia=ceiling, cyan=floor)
+- `market-session-indicator.tsx` - Colored badge showing current session status, auto-refresh every 15s
 
 **UI Components** (`frontend/src/components/ui/`)
 - `price-board-skeleton.tsx` - Loading skeleton with 10 placeholder rows
@@ -455,6 +456,12 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 
 **format-number** (`frontend/src/utils/format-number.ts`)
 - Number formatting utilities (currency, percentages, etc.)
+
+**market-session** (`frontend/src/utils/market-session.ts`)
+- Time-based VN market session detection (HOSE schedule)
+- Uses Intl.DateTimeFormat with Asia/Ho_Chi_Minh timezone
+- Detects: pre-market, ATO, continuous, lunch, ATC, PLO, closed
+- Weekend detection (no holiday support)
 
 ### Types
 
