@@ -20,7 +20,7 @@ from app.services.market_data_processor import MarketDataProcessor
 from app.services.ssi_stream_service import SSIStreamService
 from app.websocket import ConnectionManager
 from app.websocket.broadcast_loop import broadcast_loop
-from app.websocket.endpoint import router as ws_router
+from app.websocket.router import router as ws_router
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,9 @@ market_service = SSIMarketService(auth_service)
 stream_service = SSIStreamService(auth_service, market_service)
 processor = MarketDataProcessor()
 batch_writer = BatchWriter(db)
-ws_manager = ConnectionManager()
+market_ws_manager = ConnectionManager()
+foreign_ws_manager = ConnectionManager()
+index_ws_manager = ConnectionManager()
 
 # Cached at startup
 vn30_symbols: list[str] = []
@@ -72,8 +74,10 @@ async def lifespan(app: FastAPI):
     logger.info("Subscribing channels: %s", channels)
     await stream_service.connect(channels)
 
-    # 7. Start WebSocket broadcast loop
-    broadcast_task = asyncio.create_task(broadcast_loop(processor, ws_manager))
+    # 7. Start WebSocket broadcast loop (feeds 3 channels)
+    broadcast_task = asyncio.create_task(
+        broadcast_loop(processor, market_ws_manager, foreign_ws_manager, index_ws_manager)
+    )
     logger.info("WebSocket broadcast loop started")
 
     yield
@@ -84,7 +88,9 @@ async def lifespan(app: FastAPI):
         await broadcast_task
     except asyncio.CancelledError:
         pass
-    await ws_manager.disconnect_all()
+    await market_ws_manager.disconnect_all()
+    await foreign_ws_manager.disconnect_all()
+    await index_ws_manager.disconnect_all()
     await stream_service.disconnect()
     await batch_writer.stop()
     await db.disconnect()

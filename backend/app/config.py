@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     ws_heartbeat_timeout: float = 10.0    # seconds to wait for pong
     ws_queue_size: int = 50               # per-client queue maxsize
 
+    # WebSocket authentication & rate limiting
+    ws_auth_token: str = ""               # token for WS auth (empty = disabled)
+    ws_max_connections_per_ip: int = 5    # max concurrent WS connections per IP
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
