@@ -17,7 +17,7 @@ from app.services.ssi_auth_service import SSIAuthService
 from app.services.ssi_market_service import SSIMarketService
 from app.services.market_data_processor import MarketDataProcessor
 from app.services.ssi_stream_service import SSIStreamService
-from app.analytics import AlertService
+from app.analytics import AlertService, PriceTracker
 from app.websocket import ConnectionManager
 from app.websocket.data_publisher import DataPublisher
 from app.websocket.router import router as ws_router
@@ -31,6 +31,11 @@ stream_service = SSIStreamService(auth_service, market_service)
 processor = MarketDataProcessor()
 batch_writer = BatchWriter(db)
 alert_service = AlertService()
+price_tracker = PriceTracker(
+    alert_service, processor.quote_cache,
+    processor.foreign_tracker, processor.derivatives_tracker,
+)
+processor.price_tracker = price_tracker
 market_ws_manager = ConnectionManager()
 foreign_ws_manager = ConnectionManager()
 index_ws_manager = ConnectionManager()

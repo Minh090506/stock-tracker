@@ -21,5 +21,14 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 
+# Memory system (session state — personal, not committed)
+SESSION.md
+WORKLOG.md
+.claude/identity/
+.claude/memory/
+.claude/hooks/
+.claude/commands/
+.claude/settings.json
+
 # Docker
 *.log

@@ -29,10 +29,12 @@ backend/
 │   ├── analytics/
 │   │   ├── __init__.py                   # Package exports (Alert, AlertType, AlertSeverity, AlertService)
 │   │   ├── alert_models.py               # Alert domain models (AlertType, AlertSeverity, Alert)
-│   │   └── alert_service.py              # In-memory alert buffer with dedup + subscriber pattern
+│   │   ├── alert_service.py              # In-memory alert buffer with dedup + subscriber pattern
+│   │   └── price_tracker.py              # Real-time signal detector (4 signal types)
 │   ├── routers/
 │   │   ├── health.py                     # Health check endpoint
-│   │   └── market.py                     # Market data REST endpoints (Phase 4)
+│   │   ├── market_router.py              # Market data REST endpoints (Phase 5B)
+│   │   └── history_router.py             # Historical data REST endpoints (Phase 5B)
 │   ├── websocket/
 │   │   ├── __init__.py                   # Exports
 │   │   ├── connection_manager.py        # Per-client queue + connection management
@@ -58,6 +60,14 @@ backend/
 tests/
 ├── test_ssi_auth_service.py              # OAuth2 tests
 ├── test_ssi_stream_service.py            # WebSocket tests
+├── test_quote_cache.py                   # QuoteCache unit tests (10 tests)
+├── test_trade_classifier.py              # TradeClassifier unit tests (8 tests)
+├── test_session_aggregator.py            # SessionAggregator unit tests (2 tests)
+├── test_foreign_investor_tracker.py      # ForeignInvestorTracker unit tests (29 tests)
+├── test_index_tracker.py                 # IndexTracker unit tests (27 tests)
+├── test_derivatives_tracker.py           # DerivativesTracker unit tests (17 tests)
+├── test_market_data_processor.py         # MarketDataProcessor unit tests (14 tests)
+├── test_data_processor_integration.py    # Multi-channel integration tests (3 tests)
 ├── test_connection_manager.py            # WebSocket ConnectionManager tests (11 tests)
 ├── test_websocket_router.py              # Multi-channel router tests (7 tests)
 ├── test_data_publisher.py                # DataPublisher throttle + notification tests (15 tests)
@@ -345,7 +355,8 @@ tests/
 ```
 
 **Phase 4**: 37 WebSocket tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
-**Total**: 269 tests, all passing
+**Phase 5B**: 38 API router tests (12 market_router + 26 history_router)
+**Total**: 326 tests, all passing
 
 ## Data Model — PriceData (Phase 5A)
 
@@ -589,15 +600,38 @@ FASTAPI_ENV=development
 - Code review grade: A-
 - Test coverage: 326 total tests (38 new router tests)
 
-## Future Phases (Pending)
+## Phase 6: Analytics Engine (In Progress ~25%)
 
-**Phase 6**: Analytics Engine (In Progress ~20%)
+### Core Alert Infrastructure (COMPLETE)
 - Alert models: AlertType (FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT)
 - Alert severity: INFO, WARNING, CRITICAL
 - AlertService: in-memory buffer (deque maxlen=500), 60s dedup by (type, symbol)
 - Subscriber pattern for alert notifications (e.g. WebSocket broadcast)
 - Daily reset clears buffer and cooldowns
-- TODO: Alert generation logic, REST/WS endpoints
+
+### PriceTracker — Real-Time Signal Detection (COMPLETE)
+**File**: `app/analytics/price_tracker.py` (~180 LOC)
+
+**4 Signal Types**:
+1. **VOLUME_SPIKE**: Current trade volume > 3× avg over 20-min window
+2. **PRICE_BREAKOUT**: Price hits daily ceiling (TVT) or floor (STC)
+3. **FOREIGN_ACCELERATION**: Net foreign value changes >30% in 5-min window
+4. **BASIS_DIVERGENCE**: Futures basis crosses zero (premium ↔ discount)
+
+**Callbacks** (called from MarketDataProcessor):
+- `on_trade(symbol, last_price, last_vol)` — triggers VOLUME_SPIKE + PRICE_BREAKOUT checks
+- `on_foreign(symbol)` — triggers FOREIGN_ACCELERATION check
+- `on_basis_update()` — triggers BASIS_DIVERGENCE (zero-crossing) check
+
+**Data Sources**:
+- QuoteCache: Ceiling/floor prices for breakout detection
+- ForeignInvestorTracker: Net value + symbol history for acceleration
+- DerivativesTracker: Current basis for flip detection
+- AlertService: Registers generated alerts with auto-dedup
+
+**Tests**: `tests/test_price_tracker.py` (planned: 20+ tests)
+
+**TODO**: REST/WS endpoints, frontend alert UI
 
 **Phase 7**: Database Persistence
 - Trade history

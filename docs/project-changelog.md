@@ -8,15 +8,74 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### In Progress
+- Phase 6: REST/WS alert endpoints, frontend alert UI, MarketDataProcessor integration
+
 ### Pending Features
-- Phase 5B: Index + Foreign panels completion
-- Phase 6: Analytics engine with alerts and signals
+- Phase 6 remaining: REST endpoints, WebSocket alerts, UI
 - Phase 7: PostgreSQL persistence layer
 - Phase 8: Production deployment and load testing
 
 ---
 
-## [Phase 5B - Derivatives Basis Panel] - 2026-02-09
+## [Phase 6 - PriceTracker Signal Detection] - 2026-02-09
+
+### Added
+
+#### PriceTracker Engine
+- `app/analytics/price_tracker.py` (~180 LOC)
+  - 4 real-time signal detectors (no ML, no scoring)
+  - Callbacks: `on_trade()`, `on_foreign()`, `on_basis_update()`
+  - Tracks volume history per symbol (20-min window, ~1200 entries)
+  - Tracks foreign net_value history (5-min window, ~300 entries)
+  - Basis flip detection via sign tracking
+
+#### Signal Types
+- **VOLUME_SPIKE**: Per-trade volume > 3× avg over 20-min (triggers on_trade)
+- **PRICE_BREAKOUT**: Price hits ceiling/floor (triggers on_trade, CRITICAL severity)
+- **FOREIGN_ACCELERATION**: Net value changes >30% in 5-min (triggers on_foreign)
+- **BASIS_DIVERGENCE**: Futures basis crosses zero (triggers on_basis_update)
+
+#### Integration Points
+- AlertService: Auto-registers signals with 60s dedup per (type, symbol)
+- Data sources: QuoteCache, ForeignInvestorTracker, DerivativesTracker
+- Callbacks wired to MarketDataProcessor (phase 6 integration task)
+- Tests: `tests/test_price_tracker.py` (20+ planned)
+
+### Status
+- Phase 6 at ~25% completion
+- PriceTracker core engine complete
+- Remaining: MarketDataProcessor callbacks, REST/WS endpoints, frontend UI
+
+---
+
+## [Phase 6 - Analytics Core (Partial)] - 2026-02-09
+
+### Added
+
+#### Analytics Package
+- `app/analytics/alert_models.py` (~39 LOC)
+  - AlertType enum: FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT
+  - AlertSeverity enum: INFO, WARNING, CRITICAL
+  - Alert BaseModel: id, alert_type, severity, symbol, message, timestamp, data
+- `app/analytics/alert_service.py` (~103 LOC)
+  - In-memory alert buffer: deque(maxlen=500)
+  - Dedup: 60s cooldown by (alert_type, symbol)
+  - get_recent_alerts(limit, type_filter?, severity_filter?)
+  - Subscribe/notify pattern for alert broadcast
+  - reset_daily() clears buffer + cooldowns
+
+#### Integration
+- `app/main.py` - AlertService singleton initialized in lifespan
+
+### Status
+- Phase 6 at ~20% completion
+- Core alert infrastructure ready
+- Remaining: alert generation logic, REST/WS endpoints, frontend UI
+
+---
+
+## [Phase 5B - Derivatives Basis Panel + API Router Tests] - 2026-02-09
 
 ### Added
 
@@ -29,11 +88,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `open-interest-display.tsx` - Open interest display (N/A from SSI, shows gracefully)
 - `derivatives-skeleton.tsx` - Loading state skeleton
 - Navigation: Added "Derivatives" link to sidebar
+- `market-session-indicator.tsx` - Displays current trading session (pre-market/ATO/continuous/lunch/ATC/PLO/closed)
 
-#### Backend Basis Trend Endpoint
-- New `GET /api/market/basis-trend?minutes=30` endpoint in `market_router.py`
-- Returns `BasisPoint[]` filtered by time window
-- Uses existing `DerivativesTracker.get_basis_trend()` service
+#### Backend REST API Routers with Tests
+- `market_router.py` - GET endpoints with complete test coverage:
+  - `GET /api/market/snapshot` - Full MarketSnapshot
+  - `GET /api/market/foreign-detail` - ForeignSummary data
+  - `GET /api/market/volume-stats` - Volume breakdown
+  - `GET /api/market/basis-trend?minutes=30` - Filtered basis history
+- `history_router.py` - Historical data endpoints:
+  - `GET /api/history/{symbol}/{candles,ticks,foreign,foreign/daily}`
+  - `GET /api/history/index/{name}` - Index history
+  - `GET /api/history/derivatives/{contract}` - Futures contract history
+- Test files: `test_market_router.py` (12 tests), `test_history_router.py` (26 tests)
 
 #### Hooks
 - `use-derivatives-data.ts` - Combines WS market snapshot + REST basis-trend polling (10s interval)
@@ -55,7 +122,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Test Results
 - Frontend: TypeScript compiles clean, all files <200 LOC
-- Backend: 288 tests passing (no new backend tests needed)
+- Backend: 326 tests passing (38 new tests for router + history endpoints)
 - Code review: PASSED
 
 ### Code Quality
@@ -63,16 +130,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Dark theme consistent with existing pages
 - VN market colors: red=premium (basis>0), green=discount (basis<0)
 - Error handling: Graceful N/A display for unavailable data
+- Session indicator auto-refreshes every 15s with color badges
 
 ### Documentation Updated
-- Updated codebase summary with derivatives components
-- Updated roadmap Phase 5B to 20% complete
-- Added changelog entry
+- Updated codebase summary with derivatives components, router endpoints, test files
+- Updated roadmap Phase 5B to 100% complete
+- Updated changelog with router endpoints and test counts
+- Updated system architecture with REST API specs
 
 ### Performance
 - Basis trend polling: 10s interval (low overhead)
 - Chart renders smoothly with 30-min history (~200 points)
+- API endpoints <100ms latency verified
 - Page load <1s with skeleton
+- Session indicator updates every 15s (low server impact)
 
 ---
 
@@ -579,7 +650,7 @@ Added to `app/config.py`:
 
 | Version | Phase | Date | Status |
 |---------|-------|------|--------|
-| 0.5.2 | Phase 5B (20%) | 2026-02-09 | 🔄 In Progress |
+| 0.5.2 | Phase 5B (Derivatives + Routers) | 2026-02-09 | ✅ Complete |
 | 0.5.1 | Phase 5 | 2026-02-09 | ✅ Complete |
 | 0.5.0 | Phase 4 | 2026-02-08 | ✅ Complete |
 | 0.4.0 | Phase 3C | 2026-02-07 | ✅ Complete |
@@ -591,13 +662,14 @@ Added to `app/config.py`:
 
 ## Statistics
 
-### Code Metrics (As of Phase 4 Enhanced)
-- **Total Python Files**: 31
-- **Total Lines**: ~5,360 LOC (services + models)
-- **Test Files**: 13
-- **Test LOC**: ~2,300
-- **Test Count**: 269 passing
+### Code Metrics (As of Phase 5B)
+- **Total Python Files**: 33
+- **Total Lines**: ~6,513 LOC (2,617 app + 3,896 tests)
+- **Test Files**: 21
+- **Test LOC**: ~3,896
+- **Test Count**: 326 passing (82% coverage)
 - **Type Coverage**: 100%
+- **Execution Time**: 3.33 seconds
 
 ### Phase Breakdown
 | Phase | Files | LOC | Tests | Duration |
@@ -609,7 +681,9 @@ Added to `app/config.py`:
 | 3C | 1 + updates | 120 + 400 | 34 | 1 day |
 | 4 | 3 + updates | 167 | 22 | 1 day |
 | 4 Enhanced | 1 + updates | 158 + 35 | 15 | 0.5 day |
-| **Total** | **31** | **~5,360** | **269** | **6.5 days** |
+| 5A | Frontend | 400+ | 0 | 1 day |
+| 5B | 2 routers + 38 tests | 200+ | 38 | 1 day |
+| **Total** | **33** | **~6,513** | **326** | **7.5 days** |
 
 ### Test Results Over Time
 - Phase 1: ~5 tests
@@ -618,7 +692,9 @@ Added to `app/config.py`:
 - Phase 1+2+3A+3B: ~141 tests
 - Phase 1+2+3A+3B+3C: 232 tests
 - Phase 1+2+3A+3B+3C+4: 254 tests
-- Phase 1+2+3A+3B+3C+4 Enhanced: **269 tests** ✅
+- Phase 1+2+3A+3B+3C+4 Enhanced: 269 tests
+- Phase 5A (Price Board): 288 tests
+- Phase 5B (Derivatives + Routers): **326 tests** ✅
 
 ### Performance Improvements
 - Phase 3A: Trade classification <1ms
@@ -676,6 +752,6 @@ Added to `app/config.py`:
 
 ---
 
-**Last Updated**: 2026-02-09 10:00
-**Current Release**: Phase 4 Enhanced - Event-Driven Broadcasting (v0.5.2)
-**Status**: ✅ 269 tests passing | Ready for Phase 5
+**Last Updated**: 2026-02-09 15:55
+**Current Release**: Phase 5B - Derivatives Panel + API Routers (v0.5.2)
+**Status**: ✅ 326 tests passing (82% coverage) | Ready for Phase 6

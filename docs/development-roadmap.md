@@ -12,7 +12,7 @@
 | 3 | Data Processing Core | ✅ COMPLETE | 100% | ✓ | 232 | 3A/3B/3C: Trade, Foreign, Index, Derivatives |
 | 4 | Backend WS + REST API | ✅ COMPLETE | 100% | ✓ | 269 | WebSocket multi-channel + event-driven publisher |
 | 5 | Frontend Dashboard & REST Routers | ✅ COMPLETE | 100% | ✓ | 326 | Price board + derivatives + market/history endpoints |
-| 6 | Analytics Engine | 🔄 IN PROGRESS | 20% | 1-2w | - | Core models + AlertService shell complete |
+| 6 | Analytics Engine | 🔄 IN PROGRESS | 25% | 1-2w | - | Core models + AlertService + PriceTracker complete |
 | 7 | Database Persistence | 🔄 PENDING | 0% | 1-2w | - | PostgreSQL schema + ORM |
 | 8 | Testing & Deployment | 🔄 PENDING | 0% | 1-2w | - | Load tests + Docker + CI/CD |
 
@@ -253,47 +253,58 @@ WS_MAX_CONNECTIONS_PER_IP=5     # Rate limiting per IP
 ### Phase 6: Analytics Engine 🔄
 
 **Dates**: 2026-02-09 (Started)
-**Status**: In Progress (20% complete)
+**Status**: In Progress (25% complete)
 **Estimated Duration**: 1-2 weeks
 **Priority**: P3
 
 **Completed**:
-- [x] Alert domain models (alert_models.py ~40 LOC)
+- [x] Alert domain models (alert_models.py ~39 LOC)
   - AlertType enum: FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT
   - AlertSeverity enum: INFO, WARNING, CRITICAL
   - Alert BaseModel: id, alert_type, severity, symbol, message, timestamp, data
-- [x] AlertService core (alert_service.py ~96 LOC)
+- [x] AlertService core (alert_service.py ~103 LOC)
   - In-memory alert buffer (deque maxlen=500)
   - 60s dedup by (alert_type, symbol)
   - get_recent_alerts with type/severity filters
   - Subscribe/notify pattern for alert consumers
   - reset_daily clears buffer and cooldowns
-- [x] Main app integration (alert_service singleton in main.py)
+- [x] PriceTracker signal detection (price_tracker.py ~180 LOC)
+  - 4 signal types: VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE
+  - Callbacks: on_trade(), on_foreign(), on_basis_update()
+  - Volume history tracking (20-min window, ~1200 entries per symbol)
+  - Foreign net_value history (5-min window, ~300 entries per symbol)
+  - Basis flip detection via sign tracking
+  - Data sources: QuoteCache, ForeignInvestorTracker, DerivativesTracker
+- [x] Main app integration (alert_service + price_tracker singleton in main.py)
+
+**In Progress**:
+- MarketDataProcessor callback wiring (handle_trade → on_trade, handle_foreign → on_foreign, etc.)
 
 **Remaining Objectives**:
-- [ ] Alert generation logic (analyze processor data → register alerts)
-- [ ] REST API endpoints (GET /api/alerts, POST /api/alerts/acknowledge)
+- [ ] REST API endpoints (GET /api/alerts, POST /api/alerts/{id}/acknowledge)
 - [ ] WebSocket alert channel (/ws/alerts)
 - [ ] Frontend alert notifications (toast, banner, sidebar)
-- [ ] Alert rules configuration (thresholds, schedules)
-- [ ] Session-end summary reports
+- [ ] Tests: 20+ PriceTracker + 15+ integration tests
 
-**Alert Generation Rules (Planned)**:
-- Foreign buying acceleration >2x normal
-- Foreign selling acceleration >2x normal
-- Basis premium >1% or discount <-1%
-- Volume spike >3x 30-min avg
-- Price breakout (ceiling/floor touch)
+**Signal Generation Details**:
+
+| Signal | Trigger | Severity | Data |
+|--------|---------|----------|------|
+| VOLUME_SPIKE | vol > 3× avg (20min) | WARNING | last_vol, avg_vol, ratio, price |
+| PRICE_BREAKOUT | price == ceiling/floor | CRITICAL | price, ceiling/floor, direction |
+| FOREIGN_ACCEL | \|net_value_Δ\| > 30% (5min) | WARNING | net_value, prev_value, change_pct, direction |
+| BASIS_FLIP | basis crosses zero | WARNING | basis, basis_pct, futures/spot, direction |
 
 **Files Created**:
 - `app/analytics/__init__.py`
 - `app/analytics/alert_models.py`
 - `app/analytics/alert_service.py`
+- `app/analytics/price_tracker.py`
+- `tests/test_price_tracker.py` (planned: 20+ tests)
 
 **Files to Create**:
-- `app/analytics/alert_generator.py` (analyzes processor data)
 - `app/routers/alerts.py` (REST endpoints)
-- Tests: 15+ alert tests
+- Integration: Wire PriceTracker callbacks in MarketDataProcessor
 
 **Dependencies**: Phase 3, 4, 5 complete ✓
 **Blocking**: Phase 8
@@ -449,29 +460,32 @@ alerts (
 - [x] Color coding matches VN market conventions (red=up, green=down)
 - [x] TypeScript compiles clean, zero new dependencies
 
-### Phase 5B
-- [ ] Index charts (VN30, VNINDEX) with intraday sparklines
-- [ ] Foreign investor flow dashboard
-- [ ] Futures basis analyzer
-- [ ] All responsive at 1920x1080 and mobile
+### Phase 5B ✅
+- [x] Derivatives basis analyzer (basis trends, convergence indicator)
+- [x] REST API routers (market_router, history_router)
+- [x] Comprehensive router test coverage (38 tests)
+- [x] Session indicator component
+- [ ] Index charts (VN30, VNINDEX) with intraday sparklines (future)
+- [ ] Foreign investor flow dashboard (future)
+- [ ] All responsive at 1920x1080 and mobile (future)
 
 ### Phase 6
-- [x] Alerts generated within 5 seconds
-- [x] >95% accuracy on buy/sell acceleration
-- [x] Basis divergence detected correctly
-- [x] Alert UI responsive and non-intrusive
+- [ ] Alerts generated within 5 seconds
+- [ ] >95% accuracy on buy/sell acceleration
+- [ ] Basis divergence detected correctly
+- [ ] Alert UI responsive and non-intrusive
 
 ### Phase 7
-- [x] Trade history queryable by date/symbol
-- [x] Batch insert <100ms per 1000 records
-- [x] Retention policies working correctly
-- [x] Database queries <50ms latency
+- [ ] Trade history queryable by date/symbol
+- [ ] Batch insert <100ms per 1000 records
+- [ ] Retention policies working correctly
+- [ ] Database queries <50ms latency
 
 ### Phase 8
-- [x] Load test passes 1000 TPS sustained
-- [x] All 269+ tests passing in CI/CD
-- [x] Production deployment automated
-- [x] Monitoring/alerting operational
+- [ ] Load test passes 1000 TPS sustained
+- [ ] All 326+ tests passing in CI/CD
+- [ ] Production deployment automated
+- [ ] Monitoring/alerting operational
 
 ---
 
@@ -525,4 +539,4 @@ alerts (
 
 ---
 
-**Current Status**: Phase 5B Complete | 326 tests passing (82% coverage) | Derivatives panel ✅ | API routers ✅ | Next: Phase 6 Analytics Engine
+**Current Status**: Phase 5B Complete | Phase 6 In Progress (25%) | 326 tests passing (82% coverage) | Analytics: AlertService + PriceTracker ✅ | Next: MarketDataProcessor integration + REST endpoints

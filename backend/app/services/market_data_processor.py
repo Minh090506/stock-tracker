@@ -49,6 +49,8 @@ class MarketDataProcessor:
         self._subscribers: list[SubscriberCallback] = []
         # Price cache: symbol -> (last_price, change, ratio_change)
         self._price_cache: dict[str, tuple[float, float, float]] = {}
+        # Optional price tracker for alert generation (set externally)
+        self.price_tracker = None
 
     # -- Stream callbacks --
 
@@ -64,7 +66,9 @@ class MarketDataProcessor:
         Returns (ClassifiedTrade, SessionStats) or (None, None) for futures.
         """
         if msg.symbol.startswith("VN30F"):
-            self.derivatives_tracker.update_from_trade(msg)
+            bp = self.derivatives_tracker.update_from_trade(msg)
+            if bp and self.price_tracker:
+                self.price_tracker.on_basis_update()
             self._notify("market")
             return None, None
 
@@ -75,12 +79,16 @@ class MarketDataProcessor:
 
         classified = self.classifier.classify(msg)
         stats = self.aggregator.add_trade(classified)
+        if self.price_tracker:
+            self.price_tracker.on_trade(msg.symbol, msg.last_price, msg.last_vol)
         self._notify("market")
         return classified, stats
 
     async def handle_foreign(self, msg: SSIForeignMessage):
         """Track foreign investor delta, speed, and acceleration."""
         result = self.foreign_tracker.update(msg)
+        if self.price_tracker:
+            self.price_tracker.on_foreign(msg.symbol)
         self._notify("foreign")
         return result
 
@@ -153,4 +161,6 @@ class MarketDataProcessor:
         self.index_tracker.reset()
         self.derivatives_tracker.reset()
         self._price_cache.clear()
+        if self.price_tracker:
+            self.price_tracker.reset()
         logger.info("Session data reset")

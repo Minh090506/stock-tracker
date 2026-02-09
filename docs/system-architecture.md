@@ -29,12 +29,12 @@
     │ Services│      │              │    │ (Phase 6) │    │ (asyncpg)    │
     └─────────┘      └──────────────┘    └───────────┘    └──────────────┘
         │                   │                   │
-        │                   ├── QuoteCache      ├── AlertService (in-memory buffer)
-        │                   ├── TradeClassifier │    ├── Alert models (AlertType, AlertSeverity)
-        │                   ├── SessionAggregator│   ├── Dedup (60s by type+symbol)
-        │                   ├── ForeignInvestorTracker │ Subscribe/notify pattern
-        │                   ├── IndexTracker     └── TODO: alert_generator.py
-        │                   └── DerivativesTracker
+        │                   ├── QuoteCache      ├── AlertService
+        │                   ├── TradeClassifier │    ├── In-memory buffer (deque maxlen=500)
+        │                   ├── SessionAggregator│   ├── 60s dedup by (type+symbol)
+        │                   ├── ForeignInvestorTracker│ Subscribe/notify pattern
+        │                   ├── IndexTracker     │    └── reset_daily() at 15:00 VN
+        │                   └── DerivativesTracker    └── TODO: alert_generator.py
         │
         ▼
     ┌──────────────────────────────────┐
@@ -683,28 +683,83 @@ useDerivativesData() hook
 - Chart renders <100ms with 200 points
 - Memory: ~20KB for 30-min history
 
-## Phase 6: Analytics Engine (In Progress ~20%)
+## Phase 6: Analytics Engine (In Progress ~25%)
 
-**Analytics Package** (`app/analytics/`)
-- **alert_models.py** (~40 LOC)
-  - `AlertType` enum: FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT
-  - `AlertSeverity` enum: INFO, WARNING, CRITICAL
-  - `Alert` model: id, alert_type, severity, symbol, message, timestamp, data (dict)
-- **alert_service.py** (~96 LOC)
-  - In-memory alert buffer: deque(maxlen=500)
-  - Dedup: skip same (alert_type, symbol) within 60s
-  - get_recent_alerts(limit, type_filter?, severity_filter?) → list[Alert]
-  - subscribe(callback) / unsubscribe(callback) - pub/sub pattern
-  - reset_daily() - clears buffer and cooldowns at 15:00 VN
+### Alert Infrastructure + PriceTracker
 
-**Integration** (`app/main.py`):
-- `alert_service = AlertService()` singleton initialized in lifespan
+**Core Components**:
 
-**Remaining Work**:
-- Alert generation logic (monitors processor → registers alerts)
-- REST endpoints: GET /api/alerts, POST /api/alerts/acknowledge
-- WebSocket channel: /ws/alerts (broadcast new alerts)
-- Frontend alert UI (toast, banner, sidebar panel)
+#### Alert Models (`alert_models.py`, ~39 LOC)
+```python
+AlertType (Enum):
+├── FOREIGN_ACCELERATION    # Foreign net_value >30% change in 5min
+├── BASIS_DIVERGENCE        # Futures basis crosses zero
+├── VOLUME_SPIKE           # Per-trade volume >3x avg over 20min
+└── PRICE_BREAKOUT         # Price touches ceiling/floor
+
+AlertSeverity (Enum):
+├── INFO      # Informational
+├── WARNING   # Significant activity
+└── CRITICAL  # Immediate attention
+```
+
+#### AlertService (`alert_service.py`, ~103 LOC)
+- In-memory buffer: `deque(maxlen=500)`
+- 60s dedup by (alert_type, symbol)
+- Subscribe/notify pattern for broadcast
+
+#### PriceTracker (`price_tracker.py`, ~180 LOC)
+
+**4 Real-Time Signal Detectors**:
+
+```
+1. VOLUME_SPIKE
+   └─ Trigger: last_vol > 3× avg_vol over 20-min window
+   └─ Called: on_trade(symbol, last_price, last_vol)
+   └─ Severity: WARNING
+
+2. PRICE_BREAKOUT
+   └─ Trigger: last_price >= ceiling OR last_price <= floor
+   └─ Called: on_trade(symbol, last_price, last_vol)
+   └─ Severity: CRITICAL
+   └─ Data: direction ("ceiling" | "floor")
+
+3. FOREIGN_ACCELERATION
+   └─ Trigger: |net_value_change / past_value| > 30% in 5min window
+   └─ Called: on_foreign(symbol)
+   └─ Severity: WARNING
+   └─ Data: direction ("buying" | "selling"), change_pct
+
+4. BASIS_DIVERGENCE
+   └─ Trigger: futures basis crosses zero (premium ↔ discount)
+   └─ Called: on_basis_update() after basis recompute
+   └─ Severity: WARNING
+   └─ Data: basis, basis_pct, direction ("premium→discount" | "discount→premium")
+```
+
+**Integration with MarketDataProcessor**:
+```python
+# In handle_trade():
+price_tracker.on_trade(symbol, last_price, last_vol)
+
+# In handle_foreign():
+price_tracker.on_foreign(symbol)
+
+# In update_basis():
+price_tracker.on_basis_update()
+```
+
+**Data Sources**:
+- QuoteCache: Ceiling/floor for breakout detection
+- ForeignInvestorTracker: Net value history
+- DerivativesTracker: Current basis + sign tracking
+- AlertService: Registers alerts with auto-dedup
+
+**Remaining Work** (Phase 6 ~75%):
+1. Wire callbacks into MarketDataProcessor
+2. REST endpoints: `GET /api/alerts`, `POST /api/alerts/{id}/acknowledge`
+3. WebSocket channel: `/ws/alerts?token=xxx`
+4. Frontend toast notifications + alert panel
 
 ## Next Phases
 
