@@ -699,8 +699,114 @@ price_tracker.on_basis_update()
 **Remaining Work** (Phase 6 ~35%):
 1. Frontend alert notifications UI (toast notifications, alert panel)
 
+## Deployment Architecture (Production Docker Setup)
+
+### Overview
+
+Production deployment uses a containerized architecture with three services coordinated via docker-compose:
+
+```
+┌─────────────────────────────────────────────────┐
+│         Nginx (Reverse Proxy - Alpine)          │
+│ ┌────────────────┬──────────────────────────┐   │
+│ │ Frontend:80    │ Backend:8000             │   │
+│ │ (Static)       │ (FastAPI)                │   │
+│ └────────────────┴──────────────────────────┘   │
+│           Port 80 (HTTP)                        │
+└──────────────────┬──────────────────────────────┘
+                   │
+                   ▼
+        ┌──────────────────┐
+        │  Docker Network  │
+        │   app-network    │
+        └────────┬─────────┘
+                 │
+        ┌────────┴────────────────────┐
+        ▼                             ▼
+    ┌──────────┐            ┌──────────────────┐
+    │ Frontend │            │ Backend          │
+    │ (Node)   │            │ (FastAPI)        │
+    │ :80      │            │ :8000            │
+    │ Static   │            │ asyncio          │
+    │ files    │            │ uvloop           │
+    └──────────┘            │ non-root user    │
+                            └──────────────────┘
+```
+
+### Service Definitions
+
+**Nginx** (`docker-compose.prod.yml`):
+- Image: `nginx:alpine`
+- Binds port 80 to container
+- Routes `/` → frontend, `/api/` → backend, `/ws` → backend (with WebSocket upgrade)
+- Health check: `wget http://localhost/health` (backend health via proxy)
+- Depends on backend (healthy) and frontend (started)
+
+**Backend** (`backend/Dockerfile`):
+- Multi-stage build: Python 3.12 slim base → prod image
+- Non-root user: `stock` (UID 1000)
+- Dependencies: fastapi, uvloop, asyncpg
+- Healthcheck: `python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"`
+- Memory limits: 1GB max, 512MB reserved
+- Runs: `uvicorn app.main:app --host 0.0.0.0 --port 8000 --lifespan on`
+
+**Frontend** (`frontend/Dockerfile`):
+- Multi-stage: Node 20 builder → Nginx runner
+- Build: `npm run build` → static bundle in `dist/`
+- Serve: Nginx with gzip compression + cache headers
+- Memory limits: 128MB max, 64MB reserved
+- Static-only (no proxy to backend; handled by main Nginx)
+
+### Network Configuration
+
+**Bridge Network** (`app-network`):
+- Service discovery via container names (DNS resolution)
+- Backend ↔ Frontend communication via internal network (no port exposure)
+- Nginx routes traffic from external port 80 to internal services
+
+**Reverse Proxy Rules** (`nginx/nginx.conf`):
+```
+/ (root)           → frontend:80     (static HTML/JS)
+/api/*            → backend:8000    (FastAPI REST endpoints)
+/ws               → backend:8000    (WebSocket with Upgrade headers)
+/health           → backend:8000    (health check, no logs)
+```
+
+### Environment Configuration
+
+All configuration via `.env` file (copied into containers):
+- SSI credentials (SSI_CONSUMER_ID, SSI_CONSUMER_SECRET)
+- Database (DATABASE_URL for Phase 7)
+- WebSocket params (WS_THROTTLE_INTERVAL_MS, etc.)
+- CORS origins (CORS_ORIGINS)
+
+See `.env.example` for full template.
+
+### Running Production
+
+```bash
+# Build and start all services
+docker-compose -f docker-compose.prod.yml up -d
+
+# View logs
+docker-compose -f docker-compose.prod.yml logs -f
+
+# Stop
+docker-compose -f docker-compose.prod.yml down
+```
+
+### Security & Performance
+
+- Non-root container user (prevents privilege escalation)
+- uvloop for I/O performance (10-40% faster than standard asyncio)
+- Nginx Alpine image (lightweight, only 9MB)
+- Resource limits enforce memory caps (prevent memory leaks)
+- Health checks enable automatic restart on failure
+- WebSocket upgrade headers ensure long-lived connections
+- No secrets in Dockerfile; all via `.env`
+
 ## Next Phases
 
 - **Phase 6**: Analytics engine (alerts, correlation, signals) — 20% complete
 - **Phase 7**: Database layer for historical persistence
-- **Phase 8**: Deployment and load testing
+- **Phase 8**: Load testing and production monitoring

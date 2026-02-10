@@ -55,8 +55,21 @@ backend/
 │   ├── test_data_processor_integration.py # Multi-channel integration tests
 │   ├── test_price_tracker.py             # PriceTracker signal detection tests (31 tests)
 ├── .env.example                          # Environment template
+├── .dockerignore                         # Docker build context exclusions
 ├── requirements.txt                      # Python dependencies
-└── Dockerfile                            # Container image
+└── Dockerfile                            # Multi-stage backend container
+
+frontend/
+├── Dockerfile                            # Multi-stage Node → Nginx static server
+├── .dockerignore                         # Docker build context exclusions
+├── nginx.conf                            # Static file serving with gzip + cache
+└── [other frontend files]
+
+nginx/
+└── nginx.conf                            # Reverse proxy: frontend + backend + ws upgrade
+
+docker-compose.prod.yml                   # Production orchestration (3 services)
+.env.example                              # Environment variables template
 
 tests/
 ├── test_ssi_auth_service.py              # OAuth2 tests
