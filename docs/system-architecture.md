@@ -33,8 +33,9 @@
         │                   ├── TradeClassifier │    ├── In-memory buffer (deque maxlen=500)
         │                   ├── SessionAggregator│   ├── 60s dedup by (type+symbol)
         │                   ├── ForeignInvestorTracker│ Subscribe/notify pattern
-        │                   ├── IndexTracker     │    └── reset_daily() at 15:00 VN
-        │                   └── DerivativesTracker    └── TODO: alert_generator.py
+        │                   ├── IndexTracker     │    ├── PriceTracker (4 signal types)
+        │                   └── DerivativesTracker    ├── REST: GET /api/market/alerts
+        │                                            └── WS: /ws/alerts channel
         │
         ▼
     ┌──────────────────────────────────┐
@@ -45,6 +46,7 @@
     │ - GET /api/market/foreign-detail │
     │ - GET /api/market/volume-stats   │
     │ - GET /api/market/basis-trend    │
+    │ - GET /api/market/alerts         │
     │ history_router.py:               │
     │ - GET /api/history/{symbol}/{...}│
     │ - GET /api/history/index/{name}  │
@@ -58,6 +60,7 @@
     │ /ws/market       │
     │ /ws/foreign      │
     │ /ws/index        │
+    │ /ws/alerts       │
     └──────────────────┘
             │
             ▼
@@ -366,14 +369,15 @@ DerivativesTracker._compute_basis()
 
 ## Daily Reset Cycle
 
-All services implement `reset()` method called daily at 15:00 VN:
+All services implement `reset()` method called daily at 15:05 VN (market close + 5 minutes):
 
 ```
-15:00 VN → daily_reset_loop()
+15:05 VN → daily_reset_loop()
     ├─ SessionAggregator.reset() → clear all session stats
     ├─ ForeignInvestorTracker.reset() → clear accumulated data, history
     ├─ IndexTracker.reset() → keep values, clear intraday points
-    └─ DerivativesTracker.reset() → keep basis history for analysis
+    ├─ DerivativesTracker.reset() → keep basis history for analysis
+    └─ AlertService.reset_daily() → clear alert buffer and cooldowns
 
 Next market day:
     New SessionStats, ForeignInvestorData, IndexData intraday
@@ -683,9 +687,9 @@ useDerivativesData() hook
 - Chart renders <100ms with 200 points
 - Memory: ~20KB for 30-min history
 
-## Phase 6: Analytics Engine (In Progress ~25%)
+## Phase 6: Analytics Engine (In Progress ~65%)
 
-### Alert Infrastructure + PriceTracker
+### Alert Infrastructure + PriceTracker (Callbacks Wired)
 
 **Core Components**:
 
@@ -737,15 +741,15 @@ AlertSeverity (Enum):
    └─ Data: basis, basis_pct, direction ("premium→discount" | "discount→premium")
 ```
 
-**Integration with MarketDataProcessor**:
+**Integration with MarketDataProcessor** (WIRED):
 ```python
-# In handle_trade():
+# In handle_trade() - lines 205, 211:
 price_tracker.on_trade(symbol, last_price, last_vol)
 
-# In handle_foreign():
+# In handle_foreign() - line 237:
 price_tracker.on_foreign(symbol)
 
-# In update_basis():
+# In update_basis() - line 274 for VN30F trades:
 price_tracker.on_basis_update()
 ```
 
@@ -755,11 +759,10 @@ price_tracker.on_basis_update()
 - DerivativesTracker: Current basis + sign tracking
 - AlertService: Registers alerts with auto-dedup
 
-**Remaining Work** (Phase 6 ~75%):
-1. Wire callbacks into MarketDataProcessor
-2. REST endpoints: `GET /api/alerts`, `POST /api/alerts/{id}/acknowledge`
-3. WebSocket channel: `/ws/alerts?token=xxx`
-4. Frontend toast notifications + alert panel
+**Tests**: 31 tests passing (test_price_tracker.py)
+
+**Remaining Work** (Phase 6 ~35%):
+1. Frontend alert notifications UI (toast notifications, alert panel)
 
 ## Next Phases
 

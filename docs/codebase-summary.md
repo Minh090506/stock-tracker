@@ -27,10 +27,10 @@ backend/
 │   │   ├── derivatives_tracker.py        # Futures basis calculation (Phase 3C)
 │   │   ├── market_data_processor.py      # Unified orchestrator (Phase 3)
 │   ├── analytics/
-│   │   ├── __init__.py                   # Package exports (Alert, AlertType, AlertSeverity, AlertService)
+│   │   ├── __init__.py                   # Package exports (Alert, AlertType, AlertSeverity, AlertService, PriceTracker)
 │   │   ├── alert_models.py               # Alert domain models (AlertType, AlertSeverity, Alert)
 │   │   ├── alert_service.py              # In-memory alert buffer with dedup + subscriber pattern
-│   │   └── price_tracker.py              # Real-time signal detector (4 signal types)
+│   │   └── price_tracker.py              # Real-time signal detector (4 signal types, callbacks wired)
 │   ├── routers/
 │   │   ├── health.py                     # Health check endpoint
 │   │   ├── market_router.py              # Market data REST endpoints (Phase 5B)
@@ -52,7 +52,8 @@ backend/
 │   ├── test_index_tracker.py             # IndexTracker unit tests
 │   ├── test_derivatives_tracker.py       # DerivativesTracker unit tests
 │   ├── test_market_data_processor.py     # MarketDataProcessor unit tests
-│   └── test_data_processor_integration.py # Multi-channel integration tests
+│   ├── test_data_processor_integration.py # Multi-channel integration tests
+│   ├── test_price_tracker.py             # PriceTracker signal detection tests (31 tests)
 ├── .env.example                          # Environment template
 ├── requirements.txt                      # Python dependencies
 └── Dockerfile                            # Container image
@@ -356,7 +357,8 @@ tests/
 
 **Phase 4**: 37 WebSocket tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
 **Phase 5B**: 38 API router tests (12 market_router + 26 history_router)
-**Total**: 326 tests, all passing
+**Phase 6**: 31 PriceTracker tests (signal detection + integration with AlertService) + Frontend alert UI
+**Total**: 357 tests, all passing (84% coverage)
 
 ## Data Model — PriceData (Phase 5A)
 
@@ -381,6 +383,20 @@ class PriceData(BaseModel):
 - Updated on every trade (stores last_price, change, change_pct)
 - Merged with Quote ref/ceiling/floor for complete PriceData
 - Cleared on daily reset at 15:00 VN
+
+## Phase 6: Analytics Engine - Frontend Integration
+
+### Alert Infrastructure (Frontend)
+- Real Alert types: `AlertType` enum (VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE)
+- Alert severity: INFO, WARNING, CRITICAL
+- Alert data model: id, alert_type, severity, symbol, message, timestamp, data
+
+### Alert Hooks
+- `useAlerts` (`frontend/src/hooks/use-alerts.ts`)
+  - WebSocket stream + REST fallback (GET /api/market/alerts)
+  - Dedup by (type, symbol) matching backend
+  - Sound notifications on new alerts
+  - Returns: `{ alerts, status, isLive, soundEnabled, toggleSound }`
 
 ## Frontend Structure
 
@@ -462,10 +478,14 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 - app-sidebar-navigation.tsx - Sidebar menu (updated: "Price Board" as first nav item)
 - app-layout-shell.tsx - Main layout wrapper
 
+**Signals/Alerts** (`frontend/src/components/signals/`)
+- `signal-filter-chips.tsx` - Dual filter (type + severity) with colored badges
+- `signal-feed-list.tsx` - Real-time alert cards with icons, timestamps, auto-scroll
+
 **Data Visualization** (`frontend/src/components/`)
 - foreign/ - Foreign investor flow charts and tables
 - volume/ - Trade volume analysis
-- signals/ - Alert/signal display
+- signals/ - Alert/signal display (updated with real alerts)
 - derivatives/ - Derivatives basis tracking
   - `derivatives-summary-cards.tsx` - Futures contract overview
   - `basis-trend-area-chart.tsx` - Historical basis chart
@@ -598,18 +618,23 @@ FASTAPI_ENV=development
 - All TypeScript compiles clean; zero new dependencies
 - Files: 13 frontend components, 2 hooks, 2 routers, 38 router tests, 1 types update
 - Code review grade: A-
-- Test coverage: 326 total tests (38 new router tests)
+- Test coverage: 357 total tests (38 new router tests, 31 PriceTracker tests)
 
-## Phase 6: Analytics Engine (In Progress ~25%)
+## Phase 6: Analytics Engine (In Progress ~65%)
 
 ### Core Alert Infrastructure (COMPLETE)
 - Alert models: AlertType (FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT)
 - Alert severity: INFO, WARNING, CRITICAL
 - AlertService: in-memory buffer (deque maxlen=500), 60s dedup by (type, symbol)
-- Subscriber pattern for alert notifications (e.g. WebSocket broadcast)
-- Daily reset clears buffer and cooldowns
+- Subscriber pattern for alert notifications (WS broadcast)
+- Daily reset clears buffer and cooldowns (scheduled at 15:05 VN time)
 
-### PriceTracker — Real-Time Signal Detection (COMPLETE)
+### Backend REST/WS Endpoints (COMPLETE)
+- `GET /api/market/alerts?limit=50&type=&severity=` — Retrieve recent alerts with filtering
+- `/ws/alerts` — Real-time alert broadcasts via WebSocket channel
+- `alerts_ws_manager` registered in DataPublisher for stream status notifications
+
+### PriceTracker — Real-Time Signal Detection (COMPLETE + WIRED)
 **File**: `app/analytics/price_tracker.py` (~180 LOC)
 
 **4 Signal Types**:
@@ -618,10 +643,10 @@ FASTAPI_ENV=development
 3. **FOREIGN_ACCELERATION**: Net foreign value changes >30% in 5-min window
 4. **BASIS_DIVERGENCE**: Futures basis crosses zero (premium ↔ discount)
 
-**Callbacks** (called from MarketDataProcessor):
-- `on_trade(symbol, last_price, last_vol)` — triggers VOLUME_SPIKE + PRICE_BREAKOUT checks
-- `on_foreign(symbol)` — triggers FOREIGN_ACCELERATION check
-- `on_basis_update()` — triggers BASIS_DIVERGENCE (zero-crossing) check
+**Callbacks** (wired in MarketDataProcessor.handle_* methods):
+- `on_trade(symbol, last_price, last_vol)` — lines 205, 211 in handle_trade()
+- `on_foreign(symbol)` — line 237 in handle_foreign()
+- `on_basis_update()` — line 274 in update_basis() for VN30F trades
 
 **Data Sources**:
 - QuoteCache: Ceiling/floor prices for breakout detection
@@ -629,9 +654,11 @@ FASTAPI_ENV=development
 - DerivativesTracker: Current basis for flip detection
 - AlertService: Registers generated alerts with auto-dedup
 
-**Tests**: `tests/test_price_tracker.py` (planned: 20+ tests)
+**Tests**: `tests/test_price_tracker.py` (31 tests, all passing)
 
-**TODO**: REST/WS endpoints, frontend alert UI
+**Remaining Phase 6** (~35% of phase):
+- Frontend alert notifications UI (toast notifications, alert panel)
+- Additional integration tests if needed
 
 **Phase 7**: Database Persistence
 - Trade history
@@ -639,7 +666,26 @@ FASTAPI_ENV=development
 - Index historical values
 - Basis backtesting
 
-**Phase 8**: Testing & Deployment
+## Phase 6: Analytics Engine (Frontend Complete)
+
+### Components
+- `signal-filter-chips.tsx` - Type + severity dual filter with colored alert badges
+- `signal-feed-list.tsx` - Real-time alert cards (type icons, severity, timestamps)
+- `signals-page.tsx` - Full alert panel with connection status, sound toggle, error banner
+
+### Hooks
+- `useAlerts` - WS stream + REST fallback + dedup + sound notifications
+- `useWebSocket` - Updated: Added "alerts" channel support
+
+### Files Deleted
+- `use-signals-mock.ts` (replaced by real useAlerts + backend integration)
+
+### Types
+- Updated `frontend/src/types/index.ts` with real Alert types
+
+**Status**: Phase 6 complete (357 tests passing, 84% coverage)
+
+**Phase 7**: Testing & Deployment
 - Load testing
 - Docker deployment
 - Production hardening
