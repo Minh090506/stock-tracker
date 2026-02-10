@@ -1,4 +1,4 @@
-from app.database.connection import Database, db
+from app.database.pool import Database, db
 from app.database.batch_writer import BatchWriter
 from app.database.history_service import HistoryService
 

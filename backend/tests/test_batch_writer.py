@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.database.batch_writer import BatchWriter, MAX_QUEUE_SIZE, FLUSH_BATCH_SIZE
-from app.database.connection import Database
+from app.database.pool import Database
 from app.models.domain import (
     BasisPoint,
     ClassifiedTrade,

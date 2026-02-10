@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.database.connection import Database
+from app.database.pool import Database
 from app.database.history_service import HistoryService
 
 

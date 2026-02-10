@@ -42,7 +42,8 @@ backend/
 │   │   ├── broadcast_loop.py             # [DEPRECATED] Legacy poll-based broadcast (replaced by data_publisher)
 │   │   └── data_publisher.py             # Event-driven publisher with per-channel throttle
 │   └── database/
-│       └── migrations.py                 # Database schema (Phase 7)
+│       ├── __init__.py
+│       └── pool.py                       # Connection pool management + health check (Phase 7)
 ├── tests/
 │   ├── conftest.py                       # pytest fixtures
 │   ├── test_quote_cache.py               # QuoteCache unit tests
@@ -56,8 +57,14 @@ backend/
 │   ├── test_price_tracker.py             # PriceTracker signal detection tests (31 tests)
 ├── .env.example                          # Environment template
 ├── .dockerignore                         # Docker build context exclusions
-├── requirements.txt                      # Python dependencies
-└── Dockerfile                            # Multi-stage backend container
+├── requirements.txt                      # Python dependencies (includes alembic, psycopg2)
+├── Dockerfile                            # Multi-stage backend container
+└── alembic/                              # Alembic migration system (Phase 7)
+    ├── versions/
+    │   └── 001_initial_schema.py         # Initial migration (5 hypertables)
+    ├── env.py                            # Alembic configuration
+    ├── script.py.mako                    # Migration template
+    └── alembic.ini                       # Alembic settings
 
 frontend/
 ├── Dockerfile                            # Multi-stage Node → Nginx static server
@@ -694,15 +701,87 @@ FASTAPI_ENV=development
 
 **Tests**: `tests/test_price_tracker.py` (31 tests, all passing)
 
-**Remaining Phase 6** (~35% of phase):
-- Frontend alert notifications UI (toast notifications, alert panel)
-- Additional integration tests if needed
+**Status**: Phase 6 complete (357 tests passing, 84% coverage)
 
-**Phase 7**: Database Persistence
-- Trade history
-- Foreign snapshots
-- Index historical values
-- Basis backtesting
+---
+
+## Phase 7: Database Persistence (COMPLETE)
+
+### Connection Pool Management
+
+**File**: `backend/app/database/pool.py`
+
+**Purpose**: Manage PostgreSQL connections with health checks and graceful startup
+
+**Features**:
+- Configurable pool size (DB_POOL_MIN, DB_POOL_MAX)
+- Health check every 60 seconds (SELECT 1)
+- Graceful startup (optional DB connection)
+- Automatic reconnection on failure
+- Thread-safe for asyncio environment
+
+**API**:
+```python
+async def create_pool(db_url, min_size, max_size) -> AsyncPool
+async def get_connection() -> AsyncConnection
+async def health_check() -> bool
+```
+
+### Alembic Migrations
+
+**Directory**: `backend/alembic/` with standard Alembic structure
+
+**Files**:
+- `alembic.ini` — Main configuration file
+- `env.py` — Migration environment setup
+- `script.py.mako` — Migration template
+- `versions/001_initial_schema.py` — Initial migration
+
+**Initial Schema** (5 Hypertables for TimescaleDB):
+- `trades` (partition by timestamp)
+- `foreign_snapshots` (partition by timestamp)
+- `index_snapshots` (partition by timestamp)
+- `basis_points` (partition by timestamp)
+- `alerts` (partition by timestamp)
+
+**Usage**:
+```bash
+# Apply migrations
+alembic upgrade head
+
+# Create new migration
+alembic revision --autogenerate -m "description"
+```
+
+### Integration with FastAPI
+
+**Initialization** (`app/main.py`):
+```python
+# In lifespan context
+pool = await create_pool(
+    DATABASE_URL,
+    min_size=config.db_pool_min,
+    max_size=config.db_pool_max,
+)
+```
+
+**Health Check** (`app/routers/health.py`):
+- `/health` endpoint reports database status
+- Response: `{"status": "ok", "database": "connected"|"unavailable"}`
+
+### Graceful Startup
+
+**Behavior**:
+- If DATABASE_URL not set: app starts with warning, DB mode disabled
+- If pool creation fails: logs error, retries, continues in-memory
+- Market data (quotes, trades, foreign, index): unaffected (in-memory)
+- History endpoints: return 503 Service Unavailable if DB unavailable
+
+**Configuration**:
+- Environment variables: DB_POOL_MIN, DB_POOL_MAX (optional)
+- DATABASE_URL optional (graceful startup enabled if not set)
+
+---
 
 ## Phase 6: Analytics Engine (Frontend Complete)
 
@@ -721,9 +800,9 @@ FASTAPI_ENV=development
 ### Types
 - Updated `frontend/src/types/index.ts` with real Alert types
 
-**Status**: Phase 6 complete (357 tests passing, 84% coverage)
+**Status**: Phase 6 complete + Phase 7 complete (357 tests passing, 84% coverage)
 
-**Phase 7**: Testing & Deployment
-- Load testing
-- Docker deployment
-- Production hardening
+**Phase 8**: Load testing & production monitoring
+- Load test scenarios (1000+ TPS)
+- Performance profiling
+- Production monitoring setup

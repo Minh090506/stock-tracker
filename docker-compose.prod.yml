@@ -30,12 +30,42 @@ services:
       - "8000"
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-stock}:${POSTGRES_PASSWORD:-stock}@timescaledb:5432/${POSTGRES_DB:-stock_tracker}
+    depends_on:
+      timescaledb:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+    networks:
+      - app-network
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: stock-timescaledb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-stock}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stock}
+      POSTGRES_DB: ${POSTGRES_DB:-stock_tracker}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stock} -d ${POSTGRES_DB:-stock_tracker}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
     deploy:
       resources:
@@ -62,6 +92,9 @@ services:
           memory: 64M
     networks:
       - app-network
+
+volumes:
+  pgdata:
 
 networks:
   app-network:

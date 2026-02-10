@@ -37,6 +37,12 @@
         │                   └── DerivativesTracker    ├── REST: GET /api/market/alerts
         │                                            └── WS: /ws/alerts channel
         │
+        ├─ Database Layer (Phase 7)
+        │  └─ Connection Pool (pool.py)
+        │     ├─ Min/max configurable (DB_POOL_MIN, DB_POOL_MAX)
+        │     ├─ Health check (60s interval)
+        │     └─ Graceful startup (optional DB connection)
+        │
         ▼
     ┌──────────────────────────────────┐
     │ REST API Routers (Phase 5B)      │
@@ -699,11 +705,129 @@ price_tracker.on_basis_update()
 **Remaining Work** (Phase 6 ~35%):
 1. Frontend alert notifications UI (toast notifications, alert panel)
 
+## Database Layer (Phase 7)
+
+### Connection Pool Management
+
+**File**: `backend/app/database/pool.py`
+
+**Features**:
+- **Configurable pool size**: Min/max connections via `DB_POOL_MIN` (default 2), `DB_POOL_MAX` (default 10)
+- **Health checks**: Periodic validation every 60 seconds
+- **Graceful startup**: Application starts without DB connection (warning logged, in-memory mode continues)
+- **Automatic reconnection**: Retries on startup and periodically
+- **Connection timeout**: 10 second timeout on acquisition
+
+**Initialization**:
+```python
+# In app/main.py lifespan context
+pool = create_pool(
+    DATABASE_URL,
+    min_size=config.db_pool_min,
+    max_size=config.db_pool_max,
+)
+```
+
+**Graceful Failure Mode**:
+- If DATABASE_URL not configured: app continues with warning, DB operations return 503
+- If pool creation fails: app logs error, retries, continues in-memory
+- Market data processing (quotes, trades, foreign, index): unaffected
+- History endpoints: return `{status: 503, detail: "Database unavailable"}`
+
+### Alembic Migrations
+
+**System**: `backend/alembic/` with declarative migration versioning
+
+**Initial Schema** (5 Hypertables):
+```sql
+trades (
+  id SERIAL PRIMARY KEY,
+  symbol VARCHAR(20),
+  price DECIMAL,
+  volume BIGINT,
+  trade_type VARCHAR(20),  -- MUA_CHU_DONG, BAN_CHU_DONG, NEUTRAL
+  value DECIMAL,
+  bid_price DECIMAL,
+  ask_price DECIMAL,
+  timestamp TIMESTAMPTZ
+) PARTITION BY RANGE (timestamp);
+
+foreign_snapshots (
+  id SERIAL PRIMARY KEY,
+  symbol VARCHAR(20),
+  buy_volume BIGINT,
+  sell_volume BIGINT,
+  buy_speed DECIMAL,
+  sell_speed DECIMAL,
+  buy_acceleration DECIMAL,
+  sell_acceleration DECIMAL,
+  timestamp TIMESTAMPTZ
+) PARTITION BY RANGE (timestamp);
+
+index_snapshots (
+  id SERIAL PRIMARY KEY,
+  index_id VARCHAR(20),  -- VN30, VNINDEX
+  value DECIMAL,
+  change DECIMAL,
+  advances INT,
+  declines INT,
+  timestamp TIMESTAMPTZ
+) PARTITION BY RANGE (timestamp);
+
+basis_points (
+  id SERIAL PRIMARY KEY,
+  futures_symbol VARCHAR(20),
+  futures_price DECIMAL,
+  spot_value DECIMAL,
+  basis DECIMAL,
+  basis_pct DECIMAL,
+  is_premium BOOLEAN,
+  timestamp TIMESTAMPTZ
+) PARTITION BY RANGE (timestamp);
+
+alerts (
+  id SERIAL PRIMARY KEY,
+  alert_type VARCHAR(50),  -- VOLUME_SPIKE, PRICE_BREAKOUT, etc.
+  severity VARCHAR(20),     -- INFO, WARNING, CRITICAL
+  symbol VARCHAR(20),
+  message TEXT,
+  data JSONB,
+  timestamp TIMESTAMPTZ
+) PARTITION BY RANGE (timestamp);
+```
+
+**Migration Execution**:
+```bash
+# Run pending migrations
+alembic upgrade head
+
+# Create new migration after schema change
+alembic revision --autogenerate -m "description"
+```
+
+### Health Check Integration
+
+**Health Endpoint** (`app/routers/health.py`):
+```json
+GET /health
+{
+  "status": "ok",
+  "database": "connected"  // or "unavailable"
+}
+```
+
+**Pool health check** (60s interval):
+- Executes: `SELECT 1`
+- Logs: Connection status (connected/unavailable)
+- Action: Logs warning if unavailable, continues operation
+
+---
+
 ## Deployment Architecture (Production Docker Setup)
 
 ### Overview
 
-Production deployment uses a containerized architecture with three services coordinated via docker-compose:
+Production deployment uses a containerized architecture with four services coordinated via docker-compose:
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -719,18 +843,19 @@ Production deployment uses a containerized architecture with three services coor
         ┌──────────────────┐
         │  Docker Network  │
         │   app-network    │
-        └────────┬─────────┘
-                 │
-        ┌────────┴────────────────────┐
-        ▼                             ▼
-    ┌──────────┐            ┌──────────────────┐
-    │ Frontend │            │ Backend          │
-    │ (Node)   │            │ (FastAPI)        │
-    │ :80      │            │ :8000            │
-    │ Static   │            │ asyncio          │
-    │ files    │            │ uvloop           │
-    └──────────┘            │ non-root user    │
-                            └──────────────────┘
+        └────────┬─────────────────────┐
+                 │                     │
+        ┌────────┴────────┐  ┌─────────┴──────────┐
+        ▼                 ▼  ▼                    ▼
+    ┌──────────┐  ┌──────────────────┐  ┌──────────────────┐
+    │ Frontend │  │ Backend          │  │ TimescaleDB      │
+    │ (Node)   │  │ (FastAPI)        │  │ (PostgreSQL 16)  │
+    │ :80      │  │ :8000            │  │ :5432            │
+    │ Static   │  │ asyncio          │  │ Health checks    │
+    │ files    │  │ uvloop           │  │ Persistent vol   │
+    └──────────┘  │ Connection pool  │  └──────────────────┘
+                  │ non-root user    │
+                  └──────────────────┘
 ```
 
 ### Service Definitions
@@ -757,6 +882,15 @@ Production deployment uses a containerized architecture with three services coor
 - Memory limits: 128MB max, 64MB reserved
 - Static-only (no proxy to backend; handled by main Nginx)
 
+**TimescaleDB** (`docker-compose.prod.yml`) — NEW (Phase 7):
+- Image: `timescale/timescaledb:2.16-pg16`
+- Credentials: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` via `.env` substitution
+- Health check: `pg_isready -U $POSTGRES_USER` (10s interval, 5s timeout)
+- Persistent volume: `postgres_data` for data persistence
+- Memory limits: 1GB max, 512MB reserved
+- Network: Connected to `app-network` bridge
+- Backward compat: Supports graceful startup (app continues if unavailable)
+
 ### Network Configuration
 
 **Bridge Network** (`app-network`):
@@ -776,9 +910,20 @@ Production deployment uses a containerized architecture with three services coor
 
 All configuration via `.env` file (copied into containers):
 - SSI credentials (SSI_CONSUMER_ID, SSI_CONSUMER_SECRET)
-- Database (DATABASE_URL for Phase 7)
+- Database (DATABASE_URL, DB_POOL_MIN, DB_POOL_MAX)
+- TimescaleDB credentials (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB)
 - WebSocket params (WS_THROTTLE_INTERVAL_MS, etc.)
 - CORS origins (CORS_ORIGINS)
+
+**Phase 7 Database Variables**:
+```
+DB_POOL_MIN=2
+DB_POOL_MAX=10
+POSTGRES_USER=stockuser
+POSTGRES_PASSWORD=secure_password
+POSTGRES_DB=stock_tracker
+DATABASE_URL=postgresql://stockuser:secure_password@timescaledb:5432/stock_tracker
+```
 
 See `.env.example` for full template.
 

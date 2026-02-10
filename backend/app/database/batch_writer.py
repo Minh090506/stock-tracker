@@ -9,7 +9,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from app.database.connection import Database
+from app.database.pool import Database
 from app.models.domain import (
     BasisPoint,
     ClassifiedTrade,

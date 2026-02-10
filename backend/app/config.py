@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     # Database
     database_url: str = "postgresql://stock:stock@localhost:5432/stock_tracker"
+    db_pool_min: int = 2
+    db_pool_max: int = 10
 
     # App
     app_host: str = "0.0.0.0"

@@ -11,7 +11,7 @@ from app.config import settings
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 
-from app.database.connection import db
+from app.database.pool import db
 from app.database.batch_writer import BatchWriter
 from app.routers.history_router import router as history_router
 from app.routers.market_router import router as market_router
@@ -75,11 +75,21 @@ def _on_new_alert(alert):
 async def lifespan(app: FastAPI):
     global vn30_symbols
 
-    # 1. Connect database pool
-    await db.connect()
+    # 1. Try connecting database pool (app works without DB)
+    db_available = False
+    try:
+        await db.connect()
+        db_available = True
+        logger.info("Database connected")
+    except Exception:
+        logger.warning(
+            "Database unavailable — running without persistence", exc_info=True,
+        )
+    app.state.db_available = db_available
 
-    # 2. Start batch writer
-    await batch_writer.start()
+    # 2. Start batch writer only if DB is available
+    if db_available:
+        await batch_writer.start()
 
     # 3. Authenticate with SSI
     await auth_service.authenticate()
@@ -138,8 +148,9 @@ async def lifespan(app: FastAPI):
     await index_ws_manager.disconnect_all()
     await alerts_ws_manager.disconnect_all()
     await stream_service.disconnect()
-    await batch_writer.stop()
-    await db.disconnect()
+    if app.state.db_available:
+        await batch_writer.stop()
+        await db.disconnect()
 
 
 app = FastAPI(
@@ -162,7 +173,10 @@ app.include_router(ws_router)
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    db_ok = False
+    if getattr(app.state, "db_available", False):
+        db_ok = await db.health_check()
+    return {"status": "ok", "database": "connected" if db_ok else "unavailable"}
 
 
 @app.get("/api/vn30-components")

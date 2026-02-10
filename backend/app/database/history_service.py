@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 import asyncpg
 
-from app.database.connection import Database
+from app.database.pool import Database
 
 
 class HistoryService:
