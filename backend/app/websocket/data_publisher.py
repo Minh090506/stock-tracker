@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 CH_MARKET = "market"
 CH_FOREIGN = "foreign"
 CH_INDEX = "index"
+CH_ALERTS = "alerts"  # broadcast via AlertService subscriber, not DataPublisher pull
 
 
 class DataPublisher:
@@ -38,6 +39,7 @@ class DataPublisher:
         market_mgr: ConnectionManager,
         foreign_mgr: ConnectionManager,
         index_mgr: ConnectionManager,
+        alerts_mgr: ConnectionManager | None = None,
     ):
         self._processor = processor
         self._managers: dict[str, ConnectionManager] = {
@@ -45,6 +47,8 @@ class DataPublisher:
             CH_FOREIGN: foreign_mgr,
             CH_INDEX: index_mgr,
         }
+        if alerts_mgr:
+            self._managers[CH_ALERTS] = alerts_mgr
         self._throttle_s = settings.ws_throttle_interval_ms / 1000.0
         self._last_broadcast: dict[str, float] = {}
         self._pending: dict[str, asyncio.TimerHandle] = {}

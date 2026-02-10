@@ -1,9 +1,11 @@
-"""REST endpoints for real-time market data snapshots.
+"""REST endpoints for real-time market data and analytics alerts.
 
 Exposes MarketDataProcessor in-memory state via REST for frontend polling.
 """
 
 from fastapi import APIRouter, Query
+
+from app.analytics.alert_models import AlertSeverity, AlertType
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -42,3 +44,16 @@ async def get_basis_trend(minutes: int = Query(30, ge=1, le=120)):
 
     points = processor.derivatives_tracker.get_basis_trend(minutes)
     return [p.model_dump() for p in points]
+
+
+@router.get("/alerts")
+async def get_alerts(
+    limit: int = Query(50, ge=1, le=200),
+    type: AlertType | None = Query(None),
+    severity: AlertSeverity | None = Query(None),
+):
+    """Recent analytics alerts, newest first. Filterable by type and severity."""
+    from app.main import alert_service
+
+    alerts = alert_service.get_recent_alerts(limit, type, severity)
+    return [a.model_dump() for a in alerts]

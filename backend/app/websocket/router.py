@@ -4,6 +4,7 @@ Channels:
   /ws/market  — full MarketSnapshot (quotes + indices + foreign + derivatives)
   /ws/foreign — ForeignSummary only (aggregate + top movers)
   /ws/index   — VN30 + VNINDEX IndexData only
+  /ws/alerts  — real-time analytics alerts (volume spike, breakout, foreign accel, basis flip)
 """
 
 import asyncio
@@ -135,3 +136,10 @@ async def index_websocket(ws: WebSocket) -> None:
     """Index channel: VN30 + VNINDEX data."""
     from app.main import index_ws_manager
     await _ws_lifecycle(ws, index_ws_manager)
+
+
+@router.websocket("/ws/alerts")
+async def alerts_websocket(ws: WebSocket) -> None:
+    """Alerts channel: real-time analytics alerts."""
+    from app.main import alerts_ws_manager
+    await _ws_lifecycle(ws, alerts_ws_manager)

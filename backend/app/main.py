@@ -1,5 +1,8 @@
+import asyncio
 import logging
+import zoneinfo
 from contextlib import asynccontextmanager
+from datetime import datetime, time, timedelta
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,9 +42,33 @@ processor.price_tracker = price_tracker
 market_ws_manager = ConnectionManager()
 foreign_ws_manager = ConnectionManager()
 index_ws_manager = ConnectionManager()
+alerts_ws_manager = ConnectionManager()
 
 # Cached at startup
 vn30_symbols: list[str] = []
+
+_VN_TZ = zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")
+_RESET_TIME = time(15, 5)  # 15:05 VN — 5min after market close
+
+
+async def _daily_reset_loop():
+    """Reset all session data at 15:05 VN time daily."""
+    while True:
+        now = datetime.now(_VN_TZ)
+        target = now.replace(hour=_RESET_TIME.hour, minute=_RESET_TIME.minute,
+                             second=0, microsecond=0)
+        if now >= target:
+            target += timedelta(days=1)
+        await asyncio.sleep((target - now).total_seconds())
+        processor.reset_session()
+        alert_service.reset_daily()
+        logger.info("Daily reset complete at %s", datetime.now(_VN_TZ).isoformat())
+
+
+def _on_new_alert(alert):
+    """Broadcast new alert to /ws/alerts clients."""
+    if alerts_ws_manager.client_count > 0:
+        alerts_ws_manager.broadcast(alert.model_dump_json())
 
 
 @asynccontextmanager
@@ -82,7 +109,8 @@ async def lifespan(app: FastAPI):
 
     # 7. Start event-driven WebSocket publisher (replaces poll-based broadcast loop)
     publisher = DataPublisher(
-        processor, market_ws_manager, foreign_ws_manager, index_ws_manager
+        processor, market_ws_manager, foreign_ws_manager, index_ws_manager,
+        alerts_mgr=alerts_ws_manager,
     )
     publisher.start()
     processor.subscribe(publisher.notify)
@@ -92,14 +120,23 @@ async def lifespan(app: FastAPI):
     stream_service.set_reconnect_callback(publisher.on_ssi_reconnect)
     logger.info("WebSocket data publisher started")
 
+    # 9. Wire alert broadcasts to /ws/alerts channel
+    alert_service.subscribe(_on_new_alert)
+
+    # 10. Schedule daily reset at 15:05 VN time
+    reset_task = asyncio.create_task(_daily_reset_loop())
+
     yield
 
     # Shutdown (reverse order)
+    reset_task.cancel()
+    alert_service.unsubscribe(_on_new_alert)
     processor.unsubscribe(publisher.notify)
     publisher.stop()
     await market_ws_manager.disconnect_all()
     await foreign_ws_manager.disconnect_all()
     await index_ws_manager.disconnect_all()
+    await alerts_ws_manager.disconnect_all()
     await stream_service.disconnect()
     await batch_writer.stop()
     await db.disconnect()
