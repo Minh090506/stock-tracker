@@ -133,17 +133,22 @@ export interface VolumeStatsResponse {
   stats: SessionStats[];
 }
 
-// -- Signals (mock until analytics engine) --
+// -- Alerts (analytics engine) --
 
-export type SignalType = "foreign" | "volume" | "divergence";
-export type SignalSeverity = "info" | "warning" | "critical";
+export type AlertType =
+  | "foreign_acceleration"
+  | "basis_divergence"
+  | "volume_spike"
+  | "price_breakout";
 
-export interface Signal {
+export type AlertSeverity = "info" | "warning" | "critical";
+
+export interface Alert {
   id: string;
-  type: SignalType;
-  severity: SignalSeverity;
+  alert_type: AlertType;
+  severity: AlertSeverity;
   symbol: string;
   message: string;
-  value: number;
   timestamp: string;
+  data: Record<string, unknown>;
 }

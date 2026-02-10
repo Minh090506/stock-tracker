@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 
 // -- Public types --
 
-export type WebSocketChannel = "market" | "foreign" | "index";
+export type WebSocketChannel = "market" | "foreign" | "index" | "alerts";
 export type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 export interface WebSocketResult<T> {
