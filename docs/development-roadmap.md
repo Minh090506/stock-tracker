@@ -430,18 +430,58 @@ alerts (
 **Dependencies**: Phase 4 complete ✓
 **Blocking**: Phase 8
 
+### Phase 8A: CI/CD Pipeline ✅
+
+**Dates**: 2026-02-10
+**Status**: COMPLETE
+**Duration**: 0.5 day
+**Priority**: P1
+
+**Deliverables**:
+- [x] GitHub Actions workflow (`.github/workflows/ci.yml`)
+- [x] Backend job: Python 3.12 + pytest with 80% coverage enforcement
+- [x] Frontend job: Node 20 + npm build + conditional tests
+- [x] Docker build job: Production image verification
+- [x] Test dependencies file (`backend/requirements-dev.txt`)
+
+**Pipeline Architecture**:
+```yaml
+Trigger: Push to master/main, all PRs
+Jobs:
+  1. backend (15min) → pytest --cov-fail-under=80
+  2. frontend (10min) → npm run build
+  3. docker-build (20min, depends: backend+frontend) → compose build
+```
+
+**Test Dependencies Added**:
+- pytest==8.3.5
+- pytest-cov==6.0.0
+- pytest-asyncio==0.24.0
+- httpx==0.28.1
+
+**Coverage Requirements**:
+- Backend: 80% minimum (enforced)
+- Frontend: Build success required
+
+**Files Created**:
+- `.github/workflows/ci.yml` (82 LOC)
+- `backend/requirements-dev.txt` (4 dependencies)
+
+**Dependencies**: Docker production setup complete ✓
+**Unblocks**: Automated testing on every commit
+
 ### Phase 8: Testing & Deployment 🔄
 
-**Estimated Duration**: 1-2 weeks
+**Estimated Duration**: 1 week (updated from 1-2 weeks)
 **Priority**: P1
-**Effort**: 4h planning + implementation
+**Effort**: 3h planning + implementation
 
 **Objectives**:
+- [x] CI/CD pipeline (GitHub Actions) — Phase 8A COMPLETE
 - [ ] Load testing (1000+ TPS, 500+ concurrent symbols)
 - [ ] End-to-end scenario testing
-- [ ] Docker Compose production setup
-- [ ] CI/CD pipeline (GitHub Actions)
 - [ ] Performance profiling
+- [ ] Production monitoring setup
 - [ ] Documentation finalization
 
 **Load Test Scenarios**:
@@ -451,27 +491,18 @@ alerts (
 - Index updates at 1Hz
 - All services <5ms latency under load
 
-**Deployment**:
-- Docker images for backend + frontend
-- docker-compose.yml with PostgreSQL, Redis (optional)
-- Environment-specific configs (.env.production)
-- Health checks, monitoring setup
-
-**CI/CD Pipeline** (GitHub Actions):
-- Run linting on push
-- Run 254 tests on PR
-- Build Docker images
-- Deploy to staging on merge to develop
-- Manual approval for production
+**Monitoring & Profiling**:
+- Performance profiling under load
+- Memory leak detection
+- CPU/network utilization metrics
+- Alert latency benchmarks
 
 **Files to Create/Modify**:
-- `.github/workflows/test.yml`
-- `.github/workflows/deploy.yml`
-- `docker-compose.production.yml`
-- Load test scripts
+- Load test scripts (locust or similar)
 - Performance benchmarks
+- Monitoring dashboards (Grafana)
 
-**Dependencies**: All phases complete ✓
+**Dependencies**: Phase 8A complete ✓
 
 ---
 
@@ -554,11 +585,17 @@ alerts (
 - [ ] Retention policies working correctly
 - [ ] Database queries <50ms latency
 
-### Phase 8
+### Phase 8A ✅
+- [x] GitHub Actions CI pipeline operational
+- [x] Backend tests run with 80% coverage enforcement
+- [x] Frontend builds successfully in CI
+- [x] Docker production images verified
+- [x] 357 tests passing in CI/CD
+
+### Phase 8 (Remaining)
 - [ ] Load test passes 1000 TPS sustained
-- [ ] All 326+ tests passing in CI/CD
-- [ ] Production deployment automated
-- [ ] Monitoring/alerting operational
+- [ ] Performance profiling completed
+- [ ] Production monitoring/alerting operational
 
 ---
 

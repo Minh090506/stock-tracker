@@ -10,7 +10,72 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### In Progress
 - Phase 7: PostgreSQL persistence layer
-- Phase 8: Production deployment and load testing
+- Phase 8: Load testing and production monitoring
+
+---
+
+## [Phase 8A - CI/CD Pipeline] - 2026-02-10
+
+### Added
+
+#### GitHub Actions Workflow
+- **New File**: `.github/workflows/ci.yml` (82 LOC)
+  - 3-job pipeline: backend → frontend → docker-build
+  - Triggers on push to master/main and all pull requests
+  - Timeouts: backend (15min), frontend (10min), docker (20min)
+
+#### Backend CI Job
+- Python 3.12 environment with pip caching
+- Installs from `backend/requirements-dev.txt`
+- Creates `.env` from `.env.example`
+- Runs pytest with coverage: `pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=80`
+- Enforces 80% minimum coverage (build fails if below threshold)
+
+#### Frontend CI Job
+- Node 20 environment with npm caching
+- Installs via `npm ci` (clean install)
+- Builds production bundle: `npm run build`
+- Conditional test execution (runs if test script exists)
+
+#### Docker Build Job
+- Depends on backend + frontend jobs passing
+- Builds production images: `docker compose -f docker-compose.prod.yml build`
+- Verifies images exist: stock-tracker-backend + stock-tracker-frontend
+- Only runs if tests and build pass
+
+#### Test Dependencies
+- **New File**: `backend/requirements-dev.txt` (4 dependencies)
+  - pytest==8.3.5
+  - pytest-cov==6.0.0
+  - pytest-asyncio==0.24.0
+  - httpx==0.28.1
+
+### Configuration
+- Backend: `working-directory: backend`, `cache-dependency-path: backend/requirements-dev.txt`
+- Frontend: `working-directory: frontend`, `cache-dependency-path: frontend/package-lock.json`
+- Actions versions: `actions/checkout@v4`, `actions/setup-python@v5`, `actions/setup-node@v4`
+
+### Quality Gates
+- Backend: 80% coverage minimum (enforced via `--cov-fail-under=80`)
+- Frontend: Build must succeed
+- Docker: Images must build without errors
+- All jobs must pass before merge
+
+### Performance
+- Cached dependencies speed up subsequent runs
+- Parallel job execution where possible
+- Total pipeline time: ~5-10 minutes (typical)
+
+### Documentation Updated
+- `docs/deployment-guide.md` — Added CI/CD Pipeline section
+- `docs/system-architecture.md` — Added CI/CD Pipeline section with job details
+- `docs/development-roadmap.md` — Added Phase 8A with COMPLETE status
+
+### Status
+- **Phase 8A: 100% COMPLETE** (CI/CD pipeline operational)
+- **Phase 8 Overall: 30%** (Load testing + monitoring remaining)
+
+**Next**: Phase 7 (Database Persistence) or Phase 8 (Load Testing)
 
 ---
 
