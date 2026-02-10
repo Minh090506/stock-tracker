@@ -76,6 +76,7 @@ export function VolumeDetailTable({ stats }: VolumeDetailTableProps) {
             <th onClick={() => handleSort("total_vol")} className="px-4 py-3 text-right cursor-pointer hover:bg-gray-700">
               Total {sortKey === "total_vol" && (sortDir === "asc" ? "↑" : "↓")}
             </th>
+            <th className="px-4 py-3 text-center hidden md:table-cell">Pressure</th>
             <th onClick={() => handleSort("buy_ratio")} className="px-4 py-3 text-right cursor-pointer hover:bg-gray-700">
               Buy Ratio {sortKey === "buy_ratio" && (sortDir === "asc" ? "↑" : "↓")}
             </th>
@@ -84,6 +85,8 @@ export function VolumeDetailTable({ stats }: VolumeDetailTableProps) {
         <tbody>
           {sortedStats.map((stat) => {
             const buyRatio = stat.total_volume > 0 ? (stat.mua_chu_dong_volume / stat.total_volume) * 100 : 0;
+            const sellRatio = stat.total_volume > 0 ? (stat.ban_chu_dong_volume / stat.total_volume) * 100 : 0;
+            const neutralRatio = 100 - buyRatio - sellRatio;
             const rowBg = buyRatio > 60 ? "bg-red-900/20" : buyRatio < 40 ? "bg-green-900/20" : "";
 
             return (
@@ -95,6 +98,17 @@ export function VolumeDetailTable({ stats }: VolumeDetailTableProps) {
                 <td className="px-4 py-2 text-right">{formatVnd(stat.ban_chu_dong_value)}</td>
                 <td className="px-4 py-2 text-right text-yellow-400">{formatVolume(stat.neutral_volume)}</td>
                 <td className="px-4 py-2 text-right">{formatVolume(stat.total_volume)}</td>
+                {/* Buy/sell/neutral pressure bar */}
+                <td className="px-4 py-2 hidden md:table-cell">
+                  <div
+                    className="flex h-4 w-28 rounded overflow-hidden bg-gray-700"
+                    title={`Buy: ${buyRatio.toFixed(1)}% | Sell: ${sellRatio.toFixed(1)}% | Neutral: ${neutralRatio.toFixed(1)}%`}
+                  >
+                    {buyRatio > 0 && <div style={{ width: `${buyRatio}%` }} className="bg-red-500" />}
+                    {sellRatio > 0 && <div style={{ width: `${sellRatio}%` }} className="bg-green-500" />}
+                    {neutralRatio > 0 && <div style={{ width: `${neutralRatio}%` }} className="bg-yellow-500" />}
+                  </div>
+                </td>
                 <td className="px-4 py-2 text-right font-semibold">{buyRatio.toFixed(1)}%</td>
               </tr>
             );

@@ -48,4 +48,5 @@ class TradeClassifier:
             bid_price=bid,
             ask_price=ask,
             timestamp=datetime.now(),
+            trading_session=trade.trading_session,
         )

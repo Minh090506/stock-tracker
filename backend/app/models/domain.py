@@ -26,6 +26,16 @@ class ClassifiedTrade(BaseModel):
     bid_price: float
     ask_price: float
     timestamp: datetime
+    trading_session: str = ""  # "ATO", "ATC", or "" (continuous)
+
+
+class SessionBreakdown(BaseModel):
+    """Volume breakdown for a single trading session phase (ATO/Continuous/ATC)."""
+
+    mua_chu_dong_volume: int = 0
+    ban_chu_dong_volume: int = 0
+    neutral_volume: int = 0
+    total_volume: int = 0
 
 
 class SessionStats(BaseModel):
@@ -39,6 +49,10 @@ class SessionStats(BaseModel):
     neutral_volume: int = 0
     total_volume: int = 0
     last_updated: datetime | None = None
+    # Per-session phase breakdown
+    ato: SessionBreakdown = SessionBreakdown()
+    continuous: SessionBreakdown = SessionBreakdown()
+    atc: SessionBreakdown = SessionBreakdown()
 
 
 class PriceData(BaseModel):

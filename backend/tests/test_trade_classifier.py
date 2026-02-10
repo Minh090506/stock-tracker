@@ -112,3 +112,16 @@ class TestClassifyOutputFields:
         hpg = c.classify(_make_trade(symbol="HPG", price=25.0))
         assert vnm.trade_type == TradeType.MUA_CHU_DONG
         assert hpg.trade_type == TradeType.BAN_CHU_DONG
+
+    def test_trading_session_field_in_output(self):
+        cache = QuoteCache()
+        cache.update(SSIQuoteMessage(symbol="VNM", bid_price_1=80.0, ask_price_1=80.5))
+        c = TradeClassifier(cache)
+
+        trade_ato = c.classify(_make_trade(session="ATO"))
+        trade_atc = c.classify(_make_trade(session="ATC"))
+        trade_continuous = c.classify(_make_trade(session=""))
+
+        assert trade_ato.trading_session == "ATO"
+        assert trade_atc.trading_session == "ATC"
+        assert trade_continuous.trading_session == ""

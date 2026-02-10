@@ -2,11 +2,17 @@
 
 from datetime import datetime
 
-from app.models.domain import ClassifiedTrade, SessionStats, TradeType
+from app.models.domain import ClassifiedTrade, SessionBreakdown, SessionStats, TradeType
 from app.services.session_aggregator import SessionAggregator
 
 
-def _make_trade(symbol="VNM", trade_type=TradeType.MUA_CHU_DONG, volume=100, value=8050000.0):
+def _make_trade(
+    symbol="VNM",
+    trade_type=TradeType.MUA_CHU_DONG,
+    volume=100,
+    value=8050000.0,
+    trading_session="",
+):
     return ClassifiedTrade(
         symbol=symbol,
         price=80.5,
@@ -16,6 +22,7 @@ def _make_trade(symbol="VNM", trade_type=TradeType.MUA_CHU_DONG, volume=100, val
         bid_price=80.0,
         ask_price=80.5,
         timestamp=datetime.now(),
+        trading_session=trading_session,
     )
 
 
@@ -132,3 +139,143 @@ class TestEdgeCases:
         for _ in range(1000):
             agg.add_trade(_make_trade(volume=10))
         assert agg.get_stats("VNM").total_volume == 10_000
+
+
+class TestSessionBreakdownModel:
+    """Test SessionBreakdown domain model initialization."""
+
+    def test_default_initialization(self):
+        breakdown = SessionBreakdown()
+        assert breakdown.mua_chu_dong_volume == 0
+        assert breakdown.ban_chu_dong_volume == 0
+        assert breakdown.neutral_volume == 0
+        assert breakdown.total_volume == 0
+
+    def test_custom_initialization(self):
+        breakdown = SessionBreakdown(
+            mua_chu_dong_volume=100,
+            ban_chu_dong_volume=50,
+            neutral_volume=25,
+            total_volume=175,
+        )
+        assert breakdown.mua_chu_dong_volume == 100
+        assert breakdown.ban_chu_dong_volume == 50
+        assert breakdown.neutral_volume == 25
+        assert breakdown.total_volume == 175
+
+
+class TestTradingSessionRouting:
+    """Test SessionAggregator routes trades to correct session buckets."""
+
+    def test_ato_routes_to_ato_bucket(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(trade_type=TradeType.MUA_CHU_DONG, volume=100, trading_session="ATO"))
+        stats = agg.get_stats("VNM")
+        assert stats.ato.mua_chu_dong_volume == 100
+        assert stats.ato.total_volume == 100
+        assert stats.continuous.total_volume == 0
+        assert stats.atc.total_volume == 0
+
+    def test_atc_routes_to_atc_bucket(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(trade_type=TradeType.BAN_CHU_DONG, volume=200, trading_session="ATC"))
+        stats = agg.get_stats("VNM")
+        assert stats.atc.ban_chu_dong_volume == 200
+        assert stats.atc.total_volume == 200
+        assert stats.continuous.total_volume == 0
+        assert stats.ato.total_volume == 0
+
+    def test_continuous_routes_to_continuous_bucket(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(trade_type=TradeType.NEUTRAL, volume=50, trading_session=""))
+        stats = agg.get_stats("VNM")
+        assert stats.continuous.neutral_volume == 50
+        assert stats.continuous.total_volume == 50
+        assert stats.ato.total_volume == 0
+        assert stats.atc.total_volume == 0
+
+    def test_mixed_sessions_accumulate_separately(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(trade_type=TradeType.MUA_CHU_DONG, volume=100, trading_session="ATO"))
+        agg.add_trade(_make_trade(trade_type=TradeType.MUA_CHU_DONG, volume=200, trading_session=""))
+        agg.add_trade(_make_trade(trade_type=TradeType.MUA_CHU_DONG, volume=150, trading_session="ATC"))
+        stats = agg.get_stats("VNM")
+        # Overall totals
+        assert stats.mua_chu_dong_volume == 450
+        assert stats.total_volume == 450
+        # Per-session breakdown
+        assert stats.ato.mua_chu_dong_volume == 100
+        assert stats.continuous.mua_chu_dong_volume == 200
+        assert stats.atc.mua_chu_dong_volume == 150
+
+    def test_all_trade_types_in_single_session(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(trade_type=TradeType.MUA_CHU_DONG, volume=100, trading_session=""))
+        agg.add_trade(_make_trade(trade_type=TradeType.BAN_CHU_DONG, volume=50, trading_session=""))
+        agg.add_trade(_make_trade(trade_type=TradeType.NEUTRAL, volume=25, trading_session=""))
+        stats = agg.get_stats("VNM")
+        assert stats.continuous.mua_chu_dong_volume == 100
+        assert stats.continuous.ban_chu_dong_volume == 50
+        assert stats.continuous.neutral_volume == 25
+        assert stats.continuous.total_volume == 175
+
+
+class TestResetSessionBreakdowns:
+    """Test reset clears session breakdowns."""
+
+    def test_reset_clears_all_session_buckets(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(volume=100, trading_session="ATO"))
+        agg.add_trade(_make_trade(volume=200, trading_session=""))
+        agg.add_trade(_make_trade(volume=150, trading_session="ATC"))
+        agg.reset()
+        stats = agg.get_stats("VNM")
+        # All buckets should be zero
+        assert stats.ato.total_volume == 0
+        assert stats.continuous.total_volume == 0
+        assert stats.atc.total_volume == 0
+        assert stats.total_volume == 0
+
+    def test_can_accumulate_after_reset(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(volume=100, trading_session="ATO"))
+        agg.reset()
+        agg.add_trade(_make_trade(volume=50, trading_session="ATO"))
+        stats = agg.get_stats("VNM")
+        assert stats.ato.total_volume == 50
+        assert stats.total_volume == 50
+
+
+class TestSessionTotalsInvariant:
+    """Verify session breakdown totals always sum to overall totals."""
+
+    def test_session_totals_match_overall(self):
+        agg = SessionAggregator()
+        agg.add_trade(_make_trade(trade_type=TradeType.MUA_CHU_DONG, volume=100, trading_session="ATO"))
+        agg.add_trade(_make_trade(trade_type=TradeType.BAN_CHU_DONG, volume=200, trading_session=""))
+        agg.add_trade(_make_trade(trade_type=TradeType.NEUTRAL, volume=50, trading_session="ATC"))
+        agg.add_trade(_make_trade(trade_type=TradeType.MUA_CHU_DONG, volume=300, trading_session=""))
+        stats = agg.get_stats("VNM")
+        session_sum = stats.ato.total_volume + stats.continuous.total_volume + stats.atc.total_volume
+        assert session_sum == stats.total_volume
+
+
+class TestClassifiedTradeTradingSession:
+    """Test ClassifiedTrade includes trading_session field."""
+
+    def test_trading_session_field_exists(self):
+        trade = _make_trade(trading_session="ATO")
+        assert hasattr(trade, "trading_session")
+        assert trade.trading_session == "ATO"
+
+    def test_trading_session_default_empty(self):
+        trade = _make_trade()
+        assert trade.trading_session == ""
+
+    def test_trading_session_preserved_in_model(self):
+        trade_ato = _make_trade(trading_session="ATO")
+        trade_atc = _make_trade(trading_session="ATC")
+        trade_continuous = _make_trade(trading_session="")
+        assert trade_ato.trading_session == "ATO"
+        assert trade_atc.trading_session == "ATC"
+        assert trade_continuous.trading_session == ""

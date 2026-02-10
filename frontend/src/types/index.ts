@@ -4,6 +4,13 @@
 
 export type TradeType = "mua_chu_dong" | "ban_chu_dong" | "neutral";
 
+export interface SessionBreakdown {
+  mua_chu_dong_volume: number;
+  ban_chu_dong_volume: number;
+  neutral_volume: number;
+  total_volume: number;
+}
+
 export interface SessionStats {
   symbol: string;
   mua_chu_dong_volume: number;
@@ -13,6 +20,9 @@ export interface SessionStats {
   neutral_volume: number;
   total_volume: number;
   last_updated: string | null;
+  ato: SessionBreakdown;
+  continuous: SessionBreakdown;
+  atc: SessionBreakdown;
 }
 
 // -- Price data --
