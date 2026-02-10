@@ -109,22 +109,29 @@ Core trade processing pipeline:
 **Key Files**:
 - `app/services/quote_cache.py` - Bid/ask storage
 - `app/services/trade_classifier.py` - Classification logic
-- `app/services/session_aggregator.py` - Per-symbol accumulation
+- `app/services/session_aggregator.py` - Per-symbol accumulation with session breakdown
 
 **Data Flow**:
 ```
 Quote Message → QuoteCache (stores bid/ask)
-Trade Message → TradeClassifier (compares vs bid/ask) → SessionAggregator (accumulates)
+Trade Message → TradeClassifier (compares vs bid/ask) → SessionAggregator (accumulates by session phase)
 ```
 
 **Models**:
-- `ClassifiedTrade` - Single trade with trade_type
-- `SessionStats` - Aggregated mua/ban/neutral totals
+- `ClassifiedTrade` - Single trade with trade_type + trading_session
+- `SessionBreakdown` - Volume split for one session phase (ATO/Continuous/ATC)
+- `SessionStats` - Aggregated mua/ban/neutral with per-session breakdown (ato, continuous, atc)
 
-**Tests**: 20+ unit tests covering:
+**Session Phase Tracking**:
+Each trade carries `trading_session` field ("ATO", "ATC", or "" for continuous).
+SessionAggregator splits volumes into three SessionBreakdown buckets per symbol,
+enabling session-phase analysis for volume studies.
+
+**Tests**: 28 unit tests covering:
 - Classification logic (MUA/BAN/NEUTRAL)
-- ATO/ATC handling
-- Session aggregation
+- Session phase routing (ATO/Continuous/ATC)
+- Per-session volume accumulation
+- Invariant test: sum of all phases == total
 - Reset behavior
 
 ### Phase 3B: Foreign Investor & Index Tracking (COMPLETE)
@@ -239,8 +246,9 @@ All services:
 
 ```
 BaseModel (Pydantic)
-├── ClassifiedTrade
-├── SessionStats
+├── ClassifiedTrade (now with trading_session field)
+├── SessionBreakdown (new: per-session phase breakdown)
+├── SessionStats (now with ato/continuous/atc breakdowns)
 ├── ForeignInvestorData
 ├── ForeignSummary
 ├── IntradayPoint
@@ -398,13 +406,13 @@ class PriceData(BaseModel):
   - Sound notifications on new alerts
   - Returns: `{ alerts, status, isLive, soundEnabled, toggleSound }`
 
-## Frontend Structure
+## Frontend Structure (50 files, 3257 LOC)
 
 ### Hooks
 
-**useWebSocket** (`frontend/src/hooks/use-websocket.ts`)
+**useWebSocket** (`frontend/src/hooks/use-websocket.ts`, 201 LOC)
 - Generic React hook for WebSocket real-time data
-- Channels: "market" | "foreign" | "index"
+- Channels: "market" | "foreign" | "index" | "alerts"
 - Auto-reconnect with exponential backoff (1s → 30s cap)
 - REST polling fallback after 3 failed WS attempts
 - Periodic WS retry (30s) while in fallback mode
@@ -423,6 +431,12 @@ class PriceData(BaseModel):
 - Combines WS market snapshot + REST basis-trend polling
 - Returns: `{ derivatives, basisTrend, status, isLive }`
 - Polls `GET /api/market/basis-trend?minutes=30` every 10s
+
+**useForeignFlow** (`frontend/src/hooks/use-foreign-flow.ts`, 102 LOC) — Foreign Flow Hybrid
+- **Hybrid architecture**: WS `/ws/foreign` for real-time ForeignSummary + REST `/api/market/foreign-detail` (10s poll) for per-symbol detail
+- Accumulates cumulative flow history (1 point/sec, max 1440/day)
+- Session-date boundary detection resets cumulative history daily
+- Returns: `{ summary, stocks, cumulativeFlow, status, isLive }`
 
 **Type Definition**:
 ```typescript
@@ -484,6 +498,12 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 
 **Data Visualization** (`frontend/src/components/`)
 - foreign/ - Foreign investor flow charts and tables
+  - `foreign-sector-bar-chart.tsx` (103 LOC) - Net buy/sell by sector (horizontal bar)
+  - `foreign-cumulative-flow-chart.tsx` (90 LOC) - Intraday cumulative net flow (area chart)
+  - `foreign-top-stocks-tables.tsx` (81 LOC) - Top 10 net buy + top 10 net sell tables
+  - `foreign-detail-table.tsx` - Per-symbol foreign detail table
+  - `foreign-summary-cards.tsx` - Aggregate foreign flow summary
+  - `foreign-heatmap.tsx` - Foreign flow heatmap visualization
 - volume/ - Trade volume analysis
 - signals/ - Alert/signal display (updated with real alerts)
 - derivatives/ - Derivatives basis tracking
@@ -493,9 +513,10 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
   - `open-interest-display.tsx` - Open interest display (N/A from SSI)
 
 **Pages** (`frontend/src/pages/`)
-- `price-board-page.tsx` - Price board page component (live/polling indicator)
-- `derivatives-page.tsx` - Derivatives basis analysis panel
-- dashboard-page.tsx, foreign-flow-page.tsx, etc.
+- `price-board-page.tsx` (48 LOC) - Price board page component (live/polling indicator)
+- `derivatives-page.tsx` (39 LOC) - Derivatives basis analysis panel
+- `foreign-flow-page.tsx` (69 LOC) - Foreign flow dashboard (hybrid WS+REST)
+- dashboard-page.tsx, volume-analysis-page.tsx, signals-page.tsx
 
 ### Utilities
 
@@ -511,6 +532,10 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 - Uses Intl.DateTimeFormat with Asia/Ho_Chi_Minh timezone
 - Detects: pre-market, ATO, continuous, lunch, ATC, PLO, closed
 - Weekend detection (no holiday support)
+
+**vn30-sector-map** (`frontend/src/utils/vn30-sector-map.ts`, 53 LOC)
+- Static VN30 sector mapping (Banking, Real Estate, Steel, etc.)
+- Used by foreign-sector-bar-chart for sector aggregation
 
 ### Types
 

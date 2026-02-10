@@ -126,9 +126,10 @@ bid, ask = processor.quote_cache.get_bid_ask("VNM")
 - **Logic**:
   - Get cached bid/ask from QuoteCache
   - Compare trade.last_price against bid/ask thresholds
-  - Mark ATO/ATC as NEUTRAL (batch auctions)
-- **Input**: X-TRADE:ALL messages
-- **Output**: ClassifiedTrade with trade_type, volume, value
+  - Preserve `trading_session` field (ATO/ATC/continuous) from SSI trade message
+  - Mark ATO/ATC as NEUTRAL (batch auctions) for classification type
+- **Input**: X-TRADE:ALL messages (includes trading_session field)
+- **Output**: ClassifiedTrade with trade_type, volume, value, trading_session
 - **Performance**: <1ms per trade
 
 ```python
@@ -142,10 +143,15 @@ else:
 ```
 
 **SessionAggregator** (`session_aggregator.py`)
-- **Purpose**: Accumulate active buy/sell totals per symbol per session
-- **Data**: Mua/ban volumes, values, neutral volume
-- **Input**: ClassifiedTrade from TradeClassifier
-- **Output**: SessionStats with aggregate totals
+- **Purpose**: Accumulate active buy/sell totals per symbol with per-session phase breakdown
+- **Data**: Mua/ban/neutral volumes split into ATO/Continuous/ATC phases
+- **Input**: ClassifiedTrade from TradeClassifier (includes trading_session)
+- **Output**: SessionStats with aggregate totals + SessionBreakdown for each phase
+- **Session Phases**:
+  - `ato`: ATO (Opening Auction) phase trades
+  - `continuous`: Regular continuous trading phase trades
+  - `atc`: ATC (Closing Auction) phase trades
+- **Invariant**: Sum of all phases totals == SessionStats totals (validated by tests)
 - **Reset**: Daily 15:00 VN (clears all stats)
 
 **ForeignInvestorTracker** (`foreign_investor_tracker.py`)
@@ -223,12 +229,20 @@ ClassifiedTrade
 ├── bid_price, ask_price (from cache)
 └── timestamp
 
-SessionStats
+SessionBreakdown (New)
+├── mua_chu_dong_volume, ban_chu_dong_volume
+├── neutral_volume, total_volume
+└── (repeated for ato, continuous, atc phases)
+
+SessionStats (Updated)
 ├── symbol
 ├── mua_chu_dong_volume, mua_chu_dong_value
 ├── ban_chu_dong_volume, ban_chu_dong_value
 ├── neutral_volume, total_volume
-└── last_updated
+├── last_updated
+├── ato: SessionBreakdown (opening auction)
+├── continuous: SessionBreakdown (regular trading)
+└── atc: SessionBreakdown (closing auction)
 
 PriceData (Phase 5A)
 ├── last_price
@@ -284,161 +298,36 @@ MarketSnapshot (Unified API)
 └── derivatives: DerivativesData
 ```
 
-## Message Flow
+## Message Flow (Summary)
 
-### Trade Processing Flow
-
-```
-SSI X-TRADE Message
-    ↓
-MarketDataProcessor.handle_trade()
-    ↓
-Is VN30F*?
-    ├─ YES → DerivativesTracker.update_futures_trade()
-    └─ NO → TradeClassifier.classify()
-            Compare last_price vs cached bid/ask
-            ↓
-            SessionAggregator.add_trade()
-            Accumulate mua/ban/neutral totals
-            ↓
-            Emit ClassifiedTrade + SessionStats
-```
-
-### Quote Processing Flow
-
-```
-SSI X-Quote Message
-    ↓
-MarketDataProcessor.handle_quote()
-    ↓
-QuoteCache.update(symbol)
-Store bid_price_1, ask_price_1, ceiling, floor, ref_price
-    ↓
-Ready for next TradeClassifier lookup
-```
-
-### Foreign Processing Flow
-
-```
-SSI R:ALL Message (cumulative FBuyVol, FSellVol)
-    ↓
-MarketDataProcessor.handle_foreign()
-    ↓
-ForeignInvestorTracker.update(msg)
-    Compute delta from previous cumulative
-    ↓
-    Add to rolling 10-min history
-    ↓
-    Calculate speed (vol/min over 5-min window)
-    Calculate acceleration (speed change)
-    ↓
-    Emit ForeignInvestorData
-```
-
-### Index Processing Flow
-
-```
-SSI MI:VN30 or MI:VNINDEX Message
-    ↓
-MarketDataProcessor.handle_index()
-    ↓
-IndexTracker.update(msg)
-    Store index value, change, advances, declines
-    ↓
-    Compute advance_ratio
-    ↓
-    Append to intraday sparkline (maxlen=1440)
-    ↓
-    Emit IndexData
-```
-
-### Basis Computation Flow
-
-```
-SSI X-TRADE for VN30F* + IndexTracker has VN30 value
-    ↓
-DerivativesTracker._compute_basis()
-    basis = futures_price - IndexTracker.get_vn30_value()
-    basis_pct = basis / spot_value * 100
-    is_premium = basis > 0
-    ↓
-    Append to basis history (maxlen=3600)
-    ↓
-    Emit BasisPoint
-```
+**Trade**: X-TRADE → handle_trade → VN30F? (YES: DerivativesTracker, NO: TradeClassifier → SessionAggregator)
+**Quote**: X-Quote → handle_quote → QuoteCache
+**Foreign**: R:ALL → handle_foreign → ForeignInvestorTracker (delta, speed, acceleration)
+**Index**: MI:* → handle_index → IndexTracker (breadth, sparkline)
+**Basis**: VN30F trade + VN30 value → DerivativesTracker (basis = futures - spot)
 
 ## Daily Reset Cycle
 
-All services implement `reset()` method called daily at 15:05 VN (market close + 5 minutes):
+15:05 VN daily_reset_loop() → SessionAggregator.reset(), ForeignInvestorTracker.reset(), IndexTracker.reset(), DerivativesTracker.reset(), AlertService.reset_daily()
 
-```
-15:05 VN → daily_reset_loop()
-    ├─ SessionAggregator.reset() → clear all session stats
-    ├─ ForeignInvestorTracker.reset() → clear accumulated data, history
-    ├─ IndexTracker.reset() → keep values, clear intraday points
-    ├─ DerivativesTracker.reset() → keep basis history for analysis
-    └─ AlertService.reset_daily() → clear alert buffer and cooldowns
+## Performance & Memory
 
-Next market day:
-    New SessionStats, ForeignInvestorData, IndexData intraday
-```
-
-## Performance Characteristics
-
-| Operation | Latency | Scale |
-|-----------|---------|-------|
-| Quote update | <0.5ms | 500+ symbols |
-| Trade classification | <1ms | 3000+ TPS |
-| Foreign delta calc | <0.5ms | 500+ symbols |
-| Index update | <0.1ms | 2 indices |
-| Basis calculation | <0.5ms | 5-10 futures contracts |
-| Aggregation (all ops) | <5ms | Full market |
-
-## Memory Management
-
-| Component | Memory | Cap | Bounded By |
-|-----------|--------|-----|-----------|
-| QuoteCache | ~500 symbols × 100B | 50KB | quote count |
-| SessionStats | ~500 symbols × 200B | 100KB | symbol count |
-| ForeignTracker history | 600 deltas × 50B | 30KB | time window (10 min) |
-| IndexTracker intraday | 1440 points × 80B | 115KB | day (1-min points) |
-| DerivativesTracker basis | 3600 points × 100B | 360KB | time window (~1h) |
-| **Total** | **~655KB** | **~655KB** | **All capped** |
-
-## State Persistence
-
-### In-Memory (Volatile)
-- QuoteCache, SessionAggregator, ForeignInvestorTracker, IndexTracker, DerivativesTracker
-- Reset daily at 15:00 VN
-
-### Database (Phase 7)
-- Trade history (for analytics)
-- Foreign investor snapshots
-- Index historical values
-- Basis history for backtesting
-
-## Error Handling
-
-- **WebSocket disconnect**: Auto-reconnect with exponential backoff
-- **Missing Quote**: Trade classified as NEUTRAL until Quote arrives
-- **Zero price**: Basis calculation returns None (skipped)
-- **Sparse updates**: Speed calculation adapts to actual interval via timestamps
-- **Division by zero**: Guarded in basis_pct computation
+| Operation | Latency | Memory |
+|-----------|---------|--------|
+| Trade classification | <1ms | 50KB (QuoteCache) |
+| Foreign delta | <0.5ms | 30KB (10-min history) |
+| Index update | <0.1ms | 115KB (intraday) |
+| Basis calc | <0.5ms | 360KB (~1h history) |
+| **Total** | **<5ms** | **~655KB** |
 
 ## Configuration
 
-Environment variables:
-
 ```
-# Market Data
-CHANNEL_R_INTERVAL_MS=1000        # Foreign investor update frequency
-FUTURES_OVERRIDE=VN30F2603        # Override active futures contracts
-
-# Quotas
-QUOTE_CACHE_CLEANUP_INTERVAL=3600 # seconds
-FOREIGN_HISTORY_WINDOW_MINUTES=10
-INDEX_INTRADAY_MAXLEN=1440
-BASIS_HISTORY_MAXLEN=3600
+CHANNEL_R_INTERVAL_MS=1000
+FUTURES_OVERRIDE=VN30F2603
+WS_THROTTLE_INTERVAL_MS=500
+WS_AUTH_TOKEN=
+WS_MAX_CONNECTIONS_PER_IP=5
 ```
 
 ## REST API Endpoints (Phase 5B)
@@ -686,6 +575,52 @@ useDerivativesData() hook
 - Basis trend polling: 10s interval
 - Chart renders <100ms with 200 points
 - Memory: ~20KB for 30-min history
+
+### Foreign Flow Dashboard (Phase 6B - COMPLETE)
+
+**Hybrid Data Flow**:
+```
+React Component (ForeignFlowPage)
+    ↓
+useForeignFlow() hook (102 LOC)
+    ├─ WebSocket /ws/foreign (Real-time)
+    │  └─ ForeignSummary (aggregate totals)
+    │     └─ Summary cards + Cumulative flow chart
+    │
+    └─ REST Polling /api/market/foreign-detail (10s interval)
+       └─ stocks[] (per-symbol foreign detail)
+          └─ Sector chart + Top buy/sell tables + Detail table
+```
+
+**Architecture Rationale**:
+- WS for lightweight real-time aggregate (low bandwidth)
+- REST polling for detailed per-symbol data (heavier payload, acceptable 10s delay)
+- Session-date boundary detection resets cumulative flow history daily
+
+**Frontend Components**:
+- `vn30-sector-map.ts` (53 LOC) - Static sector mapping for VN30 stocks
+- `foreign-sector-bar-chart.tsx` (103 LOC) - Horizontal bar chart: net buy/sell by sector
+- `foreign-cumulative-flow-chart.tsx` (90 LOC) - Intraday cumulative flow area chart
+- `foreign-top-stocks-tables.tsx` (81 LOC) - Side-by-side top 10 net buy + top 10 net sell
+- `foreign-flow-page.tsx` (69 LOC) - Layout: header → summary → sector + cumulative → tops → detail
+- `foreign-flow-skeleton.tsx` (61 LOC) - Loading skeleton
+
+**Cumulative Flow Chart**:
+- Tracks net foreign value every second
+- Resets on session-date boundary (prevents cross-day accumulation)
+- Max 1440 points/day (~1 per minute effective rate)
+- Green area: net positive flow, Red area: net negative flow
+
+**Sector Aggregation**:
+- Groups VN30 stocks by sector (Banking, Real Estate, Steel, etc.)
+- Sums net buy/sell per sector
+- Horizontal bar chart with color coding (green=buy, red=sell)
+
+**Performance**:
+- WS latency: <100ms for summary updates
+- REST polling: 10s interval (low server load)
+- Sector chart: <50ms render with 10 sectors
+- Cumulative chart: <100ms render with 1440 points
 
 ## Phase 6: Analytics Engine (In Progress ~65%)
 

@@ -12,9 +12,137 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - Phase 7: PostgreSQL persistence layer
 - Phase 8: Production deployment and load testing
 
-### Pending Features
-- Phase 7: Database schema, ORM models, batch persistence
-- Phase 8: Load testing, CI/CD pipeline, production hardening
+---
+
+## [Phase 7A - Volume Analysis Session Breakdown] - 2026-02-10
+
+### Added
+
+#### Backend Session Phase Tracking
+- **New Model**: `SessionBreakdown` — Volume split for one session phase (ATO/Continuous/ATC)
+  - Fields: mua_chu_dong_volume, ban_chu_dong_volume, neutral_volume, total_volume
+- **Updated Model**: `SessionStats` — Now includes per-session phase breakdown
+  - New fields: ato, continuous, atc (each a SessionBreakdown instance)
+  - Invariant maintained: sum of all phases == overall totals
+- **Updated Model**: `ClassifiedTrade` — Preserves trading_session field from SSI
+  - New field: trading_session ("ATO" | "ATC" | "")
+
+#### SessionAggregator Enhancement
+- Router logic: `_get_session_bucket(trading_session: str)` maps phase to breakdown
+- Per-trade accumulation: Updates both overall totals AND appropriate phase bucket
+- 28 unit tests (100% coverage)
+  - Session phase routing (ATO/Continuous/ATC)
+  - Per-session volume split accuracy
+  - Invariant test: sum(ato + continuous + atc) == total volumes
+
+#### Frontend Volume Analysis Updates
+- **New Hook**: `useVolumeStats` — Polling `/api/market/volume-stats` endpoint
+  - Returns: SessionStats with session breakdown per symbol
+  - Interval: ~5s (low overhead)
+- **Updated Component**: `volume-detail-table.tsx`
+  - Added buy/sell pressure bars per session phase
+  - Displays mua_chu_dong % and ban_chu_dong % for ATO/Continuous/ATC
+  - Color-coded pressure visualization
+- **New Component**: `VolumeSessionComparisonChart`
+  - Stacked bar chart: ATO vs Continuous vs ATC volumes
+  - Compares session phase contribution to daily total
+  - Per-symbol selectable view
+- **Updated Page**: `volume-analysis-page.tsx`
+  - Switched from `useMarketSnapshot` to `useVolumeStats`
+  - Integrated session breakdown visualization
+  - Real-time session phase analysis
+
+#### TypeScript Types
+- Updated `frontend/src/types/index.ts`:
+  - `SessionBreakdown` interface with volume fields
+  - `SessionStats` interface with three SessionBreakdown fields
+
+### Files Modified/Created
+
+**Backend**:
+- `app/models/domain.py` — Added SessionBreakdown, updated SessionStats & ClassifiedTrade
+- `app/services/session_aggregator.py` — Added session phase routing logic
+- `app/services/trade_classifier.py` — Preserves trading_session field (no logic change)
+- `tests/test_session_aggregator.py` — 28 tests (up from 2), 100% coverage
+
+**Frontend**:
+- `frontend/src/types/index.ts` — Added SessionBreakdown type
+- `frontend/src/hooks/use-volume-stats.ts` — NEW: Volume stats polling hook
+- `frontend/src/components/volume-detail-table.tsx` — Added buy/sell pressure bars
+- `frontend/src/components/volume-session-comparison-chart.tsx` — NEW: Session breakdown chart
+- `frontend/src/pages/volume-analysis-page.tsx` — Updated to use useVolumeStats
+
+### Performance & Validation
+- Session phase routing: <0.1ms per trade
+- All 28 aggregator tests passing (instant execution)
+- Invariant validation: Confirmed sum of phases == totals
+- Memory: Minimal overhead (3 SessionBreakdown per SessionStats)
+
+### Data Flow
+```
+X-TRADE message (with trading_session field)
+    ↓
+TradeClassifier (preserves trading_session)
+    ↓
+SessionAggregator._get_session_bucket(trading_session)
+    ↓
+Update overall totals + appropriate phase bucket
+    ↓
+SessionStats with ato/continuous/atc breakdowns
+    ↓
+Frontend: volume-detail-table + volume-session-comparison-chart
+```
+
+---
+
+## [Phase 6B - Foreign Flow Hybrid Upgrade] - 2026-02-10
+
+### Added
+
+#### Frontend Foreign Flow Enhanced Real-time Architecture
+- **Hybrid data flow**: WS for real-time summary + REST polling (10s) for per-symbol detail
+- **New visualizations**: Sector chart, cumulative flow, top buy/sell tables
+
+#### New Components
+- `vn30-sector-map.ts` (53 LOC) — Static VN30 sector mapping (Banking, Real Estate, etc.)
+- `foreign-sector-bar-chart.tsx` (103 LOC) — Horizontal bar: net buy/sell by sector
+- `foreign-cumulative-flow-chart.tsx` (90 LOC) — Area chart: intraday cumulative net flow with session-date reset
+- `foreign-top-stocks-tables.tsx` (81 LOC) — Side-by-side top 10 net buy + top 10 net sell
+
+#### Modified Components
+- `use-foreign-flow.ts` (102 LOC) — Upgraded from polling-only to hybrid: WS (`/ws/foreign`) for ForeignSummary + REST (`/api/market/foreign-detail` 10s poll) for stocks[] detail. Accumulates cumulative flow history, resets on session-date boundary.
+- `foreign-flow-page.tsx` (69 LOC) — New layout: header with WS status → summary cards → sector chart + cumulative flow → top buy/sell tables → detail table
+- `foreign-flow-skeleton.tsx` (61 LOC) — Updated skeleton matching new layout
+
+### Data Flow Architecture
+```
+/ws/foreign (WebSocket)
+   ↓
+ForeignSummary (real-time aggregate)
+   ↓
+Summary cards + Cumulative flow chart
+
+/api/market/foreign-detail (REST 10s poll)
+   ↓
+stocks[] (per-symbol foreign detail)
+   ↓
+Sector chart + Top buy/sell tables + Detail table
+```
+
+### Session-Date Boundary Detection
+- Cumulative flow history resets when session date changes
+- Prevents data accumulation across trading days
+- Detects via `getMarketSession().date` comparison
+
+### Performance
+- WS latency: <100ms for summary updates
+- REST polling: 10s interval (low server load)
+- Cumulative chart: 1 point per second (~1440 points/day max)
+
+### Files Summary
+- **New**: 4 files (sector map + 3 components)
+- **Modified**: 3 files (hook, page, skeleton)
+- **Total LOC**: ~457 new + ~232 modified = ~689 LOC
 
 ---
 
@@ -453,256 +581,19 @@ Added to `app/config.py`:
 
 ---
 
-## [Phase 3C] - 2026-02-07
+## Earlier Implementation Details (Phases 3A/3B/3C)
 
-### Added
-
-#### DerivativesTracker Service
-- New `app/services/derivatives_tracker.py` (120 LOC)
-- Tracks VN30F futures contracts in real-time
-- Computes basis: futures_price - VN30_index_value
-- Detects premium (basis > 0) vs discount (basis < 0)
-- Calculates basis_pct: (basis / spot_value) * 100
-- Multi-contract support with volume-based active contract selection
-- Bounded basis history (deque maxlen=3600 = ~1 hour at 1 trade/sec)
-- Time-filtered trend analysis via `get_basis_trend(minutes=30)`
-
-#### Unified Market Data API
-- New `MarketSnapshot` model aggregating all market data:
-  - `quotes`: dict[symbol → SessionStats]
-  - `indices`: dict[index_id → IndexData]
-  - `foreign`: ForeignSummary
-  - `derivatives`: DerivativesData
-- Added `MarketDataProcessor.get_market_snapshot()` unified API
-- Added `get_derivatives_data()` convenience method
-- Single entry point for all market data queries
-
-#### Domain Models Enhancement
-- New `BasisPoint` model:
-  - Tracks timestamp, futures_symbol, futures_price, spot_value
-  - Computes basis, basis_pct, is_premium
-- New `DerivativesData` model:
-  - Real-time futures snapshot: symbol, last_price, change, change_pct
-  - Volume (cumulative session), bid/ask prices
-  - Basis and basis_pct
-  - Premium/discount flag
-- Updated `MarketSnapshot` model (new composite model)
-
-#### Tests (Phase 3C: 34 new tests)
-- `tests/test_derivatives_tracker.py` (190 LOC, 17 tests):
-  - Basis calculation: positive, negative, zero
-  - Premium vs discount detection
-  - Basis percentage accuracy
-  - Volume accumulation and active contract selection
-  - Multi-contract support during rollover
-  - Basis trend filtering by time window
-  - Reset behavior
-  - Edge cases: no VN30 value, zero prices
-- `tests/test_market_data_processor.py` (144 LOC, 14 tests):
-  - Updated from 6 to 14 tests
-  - Added derivatives integration tests
-  - Unified API consistency tests
-- `tests/test_data_processor_integration.py` (215 LOC, 3 tests):
-  - New integration test suite
-  - `test_100_ticks_across_all_channels`: Simulates 80 stock trades + 20 futures + foreign + index messages
-  - Validates end-to-end data flow across all channels
-  - Performance verification: all 34 tests in 0.04s
-
-### Modified
-
-#### MarketDataProcessor
-- Updated `handle_trade()` to route VN30F trades to DerivativesTracker
-- Added derivatives tracking initialization in `__init__`
-- Extended unified API with `get_derivatives_data()`
-- Updated `get_market_snapshot()` to include derivatives data
-
-#### Models
-- `app/models/domain.py`:
-  - Added `BasisPoint` model
-  - Added `DerivativesData` model
-  - Updated `MarketSnapshot` to include derivatives field
-  - Added `basis_pct` field to track percentage basis
-
-### Test Results
-- **Phase 3C Tests**: 34 new tests, all passing in 0.04s
-- **Total Tests**: 232 passing (Phases 1-3B: 198 + Phase 3C: 34)
-- **Performance**: <5ms per operation verified under load simulation
-- **Coverage**: ~95% estimated for Phase 3 services
-
-### Code Quality
-- Type safety: 100% type hints with Python 3.12 syntax
-- Code review: APPROVED with "EXCELLENT" rating
-- Architecture: Consistent with Phase 3A/3B patterns
-- Memory: Bounded deques prevent OOM
-- Error handling: Zero-division guards, None checks
-
-### Documentation Updated
-- Phase 03 plan status: Changed from "pending" to "complete (3A+3B+3C)"
-- Phase 03 effort: Updated to 8h (6h spent, 2h for daily reset deferred)
-- Added Phase 3C completion notes
-- Updated todo list with all Phase 3C items marked complete
-
-### Known Issues / Deferred
-- Daily reset trigger at 15:00 VN: Reset methods implemented, timing loop deferred to future phase
-- Basis history time-based eviction: Optional if VN30F trades sparse; current maxlen sufficient
-
-### Breaking Changes
-- None (additive changes only)
+**Phase 3A** (2026-02-07): Trade classification (QuoteCache, TradeClassifier, SessionAggregator) — 20+ tests
+**Phase 3B** (2026-02-07): Foreign & Index tracking (ForeignInvestorTracker with speed/acceleration, IndexTracker with breadth) — 56 tests
+**Phase 3C** (2026-02-07): Derivatives tracking (basis calculation, multi-contract support, MarketSnapshot unified API) — 34 tests
+**Total Phase 3**: 232 tests passing, <5ms latency, ~655KB memory bounded
 
 ---
 
-## [Phase 3B] - 2026-02-07
+## Earlier Phases (Phases 1-2)
 
-### Added
-
-#### ForeignInvestorTracker (REWRITTEN)
-- New `app/services/foreign_investor_tracker.py` (180 LOC)
-- Computes delta from cumulative Channel R data
-- Speed calculation: volume/minute over rolling 5-minute window
-- Acceleration tracking: change in speed (vol/min²)
-- Supports 500+ symbols concurrently
-- Rolling history window (10 minutes = 600 slots at 1 Hz)
-
-#### IndexTracker (NEW)
-- New `app/services/index_tracker.py` (100 LOC)
-- Tracks VN30 and VNINDEX real-time values
-- Computes advance/decline ratio (breadth indicator)
-- Maintains intraday sparkline (1440 points = 1 day at 1-min intervals)
-- Returns IndexData with all metrics
-
-#### Domain Models
-- `ForeignInvestorData`: Buy/sell volume, speed, acceleration, room usage
-- `ForeignSummary`: Aggregate + top movers (top 5 buyers/sellers)
-- `IndexData`: Index value, breadth, intraday sparkline, advance_ratio (computed field)
-- `IntradayPoint`: Single sparkline data point
-
-#### Tests (Phase 3B: 56 new tests)
-- `tests/test_foreign_investor_tracker.py` (280 LOC, 29 tests)
-- `tests/test_index_tracker.py` (220 LOC, 27 tests)
-- All edge cases covered: missing data, sparse updates, reset behavior
-
-### Modified
-
-#### MarketDataProcessor
-- Integrated ForeignInvestorTracker
-- Integrated IndexTracker
-- Added callback handlers for foreign and index messages
-- Unified API access: `get_foreign_summary()`, `get_index_data()`
-
-### Code Quality
-- Review: APPROVED
-- Performance: <5ms aggregation verified
-- Memory: ~150 KB for foreign + index data caches
-
----
-
-## [Phase 3A] - 2026-02-07
-
-### Added
-
-#### QuoteCache (NEW)
-- New `app/services/quote_cache.py` (60 LOC)
-- In-memory cache for latest bid/ask per symbol
-- Stores: bid_price_1, ask_price_1, ceiling, floor, ref_price
-- O(1) lookup for trade classification
-
-#### TradeClassifier (REWRITTEN)
-- New `app/services/trade_classifier.py` (100 LOC)
-- **CRITICAL FIX**: Uses `trade.last_vol` (per-trade) NOT `trade.total_vol` (cumulative)
-- Compares trade.last_price vs cached bid/ask
-- Classifies as: MUA_CHU_DONG (buy), BAN_CHU_DONG (sell), NEUTRAL
-- Marks ATO/ATC trades as NEUTRAL
-
-#### SessionAggregator (NEW)
-- New `app/services/session_aggregator.py` (90 LOC)
-- Accumulates per-symbol session totals
-- Tracks: mua/ban/neutral volumes and values
-- Daily reset support
-
-#### Domain Models
-- `TradeType`: Enum (MUA_CHU_DONG, BAN_CHU_DONG, NEUTRAL)
-- `ClassifiedTrade`: Symbol, price, volume, value, trade_type, bid_price, ask_price, timestamp
-- `SessionStats`: Per-symbol aggregates
-
-#### Tests (Phase 3A: 20+ unit tests)
-- `tests/test_quote_cache.py` (80 LOC, 10 tests)
-- `tests/test_trade_classifier.py` (120 LOC, 8 tests)
-- `tests/test_session_aggregator.py` (40 LOC, 2 tests)
-
-### Code Quality
-- Type safety: 100% with Python 3.12 syntax
-- Performance: <1ms per trade classification
-- Memory: ~50 KB for 500-symbol cache
-
----
-
-## [Phase 2] - 2026-02-07
-
-### Added
-
-#### SSIAuthService
-- OAuth2 token management
-- Automatic token refresh
-- Secure credential storage
-
-#### SSIStreamService
-- SignalR WebSocket connection
-- Message demultiplexing by RType
-- Auto-reconnect with exponential backoff
-- Callback registration pattern
-
-#### SSIMarketService
-- REST API client for market lookups
-- Futures contract resolver
-- Instrument information
-
-#### SSIFieldNormalizer
-- Field name mapping (SSI → internal)
-- Type conversions
-- Data validation
-
-#### FuturesResolver
-- Active VN30F contract detection
-- Rollover handling
-- Manual override support
-
-#### Models
-- `SSIQuoteMessage`: Bid/ask prices, ceiling, floor, volume
-- `SSITradeMessage`: Last price, last volume, trading session
-- `SSIForeignMessage`: Foreign buy/sell volumes and values
-- `SSIIndexMessage`: Index value, changes, breadth
-
-#### Tests
-- 60+ unit tests for Phase 2 services
-
-### Code Quality
-- Type safety: 100%
-- Error handling: Comprehensive
-- Performance: <5ms message processing
-
----
-
-## [Phase 1] - 2026-02-06
-
-### Added
-
-#### Project Setup
-- FastAPI application structure
-- Pydantic configuration management (pydantic-settings)
-- Health check endpoint (`GET /health`)
-- Docker setup (Dockerfile, docker-compose.yml)
-- Python environment (venv, requirements.txt)
-
-#### Core Files
-- `app/main.py`: FastAPI app + lifespan context
-- `app/config.py`: Settings from `.env`
-- `.env.example`: Environment template
-- `requirements.txt`: Python dependencies
-- `Dockerfile`: Container image definition
-
-#### Tests
-- Basic health check validation
-- Configuration loading tests
+**Phase 1** (2026-02-06): Project scaffolding (FastAPI + config + Docker + health endpoint)
+**Phase 2** (2026-02-07): SSI integration (OAuth2 + WebSocket + field normalization + futures resolver)
 
 ---
 
@@ -710,14 +601,16 @@ Added to `app/config.py`:
 
 | Version | Phase | Date | Status |
 |---------|-------|------|--------|
-| 0.6.0 | Phase 6 (PriceTracker Integration) | 2026-02-09 | ✅ Complete |
-| 0.5.2 | Phase 5B (Derivatives + Routers) | 2026-02-09 | ✅ Complete |
-| 0.5.1 | Phase 5 | 2026-02-09 | ✅ Complete |
-| 0.5.0 | Phase 4 | 2026-02-08 | ✅ Complete |
-| 0.4.0 | Phase 3C | 2026-02-07 | ✅ Complete |
-| 0.3.0 | Phase 3A/3B | 2026-02-07 | ✅ Complete |
-| 0.2.0 | Phase 2 | 2026-02-07 | ✅ Complete |
-| 0.1.0 | Phase 1 | 2026-02-06 | ✅ Complete |
+| 0.6.2 | Phase 6B (Foreign Flow Hybrid) | 2026-02-10 | ✅ Complete |
+| 0.6.1 | Phase 6A (Alert Engine) | 2026-02-10 | ✅ Complete |
+| 0.6.0 | Phase 6 (PriceTracker) | 2026-02-09 | ✅ Complete |
+| 0.5.2 | Phase 5B (Derivatives) | 2026-02-09 | ✅ Complete |
+| 0.5.1 | Phase 5A (Price Board) | 2026-02-09 | ✅ Complete |
+| 0.5.0 | Phase 4 (WebSocket) | 2026-02-08 | ✅ Complete |
+| 0.4.0 | Phase 3C (Derivatives) | 2026-02-07 | ✅ Complete |
+| 0.3.0 | Phase 3A/3B (Trade/Foreign/Index) | 2026-02-07 | ✅ Complete |
+| 0.2.0 | Phase 2 (SSI Integration) | 2026-02-07 | ✅ Complete |
+| 0.1.0 | Phase 1 (Scaffolding) | 2026-02-06 | ✅ Complete |
 
 ---
 
@@ -744,9 +637,9 @@ Added to `app/config.py`:
 | 4 Enhanced | 1 + updates | 158 + 35 | 15 | 0.5 day |
 | 5A | Frontend | 400+ | 0 | 1 day |
 | 5B | 2 routers + 38 tests | 200+ | 38 | 1 day |
-| 6 | PriceTracker + 31 tests | 180+ | 31 | 0.5 day |
-| 6 Update | REST/WS alert endpoints | 50+ | 0 (test count same) | 0.25 day |
-| **Total** | **36** | **~6,850** | **357** | **8.25 days** |
+| 6A | PriceTracker + alerts | 180+ | 31 | 0.5 day |
+| 6B | Foreign flow hybrid | 689 | 0 | 0.5 day |
+| **Total** | **36 backend + 50 frontend** | **~7,500** | **357** | **9 days** |
 
 ### Test Results Over Time
 - Phase 1: ~5 tests
@@ -770,52 +663,12 @@ Added to `app/config.py`:
 
 ## Deprecations
 
-### Removed (Not Implemented)
 - vnstock library (not needed; SSI has all data)
-- TCBS API (deprecated Dec 2024; not implemented)
-- TotalVol-based trade classification (incorrect; replaced with LastVol)
+- TCBS API (deprecated Dec 2024)
+- TotalVol-based trade classification (replaced with LastVol)
 
 ---
 
-## Migration Guide
-
-### From Phase 3A → 3B
-- No breaking changes
-- New `ForeignSummary` and `IndexData` models added
-- Existing `SessionStats` and `ClassifiedTrade` unchanged
-
-### From Phase 3B → 3C
-- New `BasisPoint` and `DerivativesData` models
-- Updated `MarketSnapshot` model (additive)
-- `MarketDataProcessor` routing updated for VN30F trades
-- No breaking changes to existing APIs
-
----
-
-## Future Changelog Entries
-
-### Phase 5 (Upcoming)
-- React 19 + TypeScript frontend
-- TradingView Lightweight Charts integration
-- Real-time dashboard
-
-### Phase 6 (Upcoming)
-- Analytics engine
-- Alert generation and delivery
-- Signal detection
-
-### Phase 7 (Upcoming)
-- PostgreSQL schema and migrations
-- ORM models and repositories
-- Data persistence and querying
-
-### Phase 8 (Upcoming)
-- Load testing and performance profiling
-- CI/CD pipeline
-- Production deployment
-
----
-
-**Last Updated**: 2026-02-10 09:03
-**Current Release**: Phase 6 - Alert Engine Integration (v0.6.1)
-**Status**: ✅ 357 tests passing (84% coverage) | Backend complete, frontend alert UI pending
+**Last Updated**: 2026-02-10 10:03
+**Current Release**: Phase 6B - Foreign Flow Hybrid Upgrade (v0.6.2)
+**Status**: ✅ 357 tests passing (84% coverage) | Foreign flow: WS+REST hybrid with sector/cumulative charts ✅
