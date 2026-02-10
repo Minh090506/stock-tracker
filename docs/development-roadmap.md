@@ -15,7 +15,8 @@
 | 6 | Analytics Engine | ✅ COMPLETE | 100% | ✓ | 357 | Backend + Frontend alert UI complete |
 | 7A | Volume Analysis Session Breakdown | ✅ COMPLETE | 100% | ✓ | 357 | Session phase tracking (ATO/Continuous/ATC) |
 | 7 | Database Persistence | 🔄 PENDING | 0% | 1-2w | - | PostgreSQL schema + ORM |
-| 8 | Testing & Deployment | 🔄 PENDING | 0% | 1-2w | - | Load tests + Docker + CI/CD |
+| 8A | CI/CD Pipeline | ✅ COMPLETE | 100% | ✓ | 357 | GitHub Actions with 3-job pipeline |
+| 8 | Testing & Deployment | 🔄 IN PROGRESS | 30% | 1w | - | Load tests + production monitoring |
 
 ## Completed Phases
 

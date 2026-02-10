@@ -805,8 +805,52 @@ docker-compose -f docker-compose.prod.yml down
 - WebSocket upgrade headers ensure long-lived connections
 - No secrets in Dockerfile; all via `.env`
 
+## CI/CD Pipeline
+
+### GitHub Actions Workflow
+
+**File**: `.github/workflows/ci.yml`
+
+**Pipeline Jobs**:
+
+1. **Backend** (Python 3.12, 15min timeout)
+   - Install from `requirements-dev.txt` (pytest, pytest-cov, pytest-asyncio, httpx)
+   - Create `.env` from `.env.example`
+   - Run tests: `pytest --cov=app --cov-report=term-missing --cov-report=xml --cov-fail-under=80`
+   - Enforces 80% minimum coverage
+
+2. **Frontend** (Node 20, 10min timeout)
+   - Install via `npm ci`
+   - Build: `npm run build`
+   - Tests: Conditional execution if test script exists
+
+3. **Docker Build** (20min timeout)
+   - Depends on: backend + frontend jobs passing
+   - Builds production images: `docker compose -f docker-compose.prod.yml build`
+   - Verifies: stock-tracker-backend + stock-tracker-frontend images exist
+
+**Triggers**:
+- Push to `master` or `main`
+- All pull requests
+
+**Caching**:
+- Pip dependencies via `actions/setup-python@v5` cache
+- npm dependencies via `actions/setup-node@v4` cache
+
+**Test Dependencies**:
+- Backend: `backend/requirements-dev.txt`
+  - pytest==8.3.5
+  - pytest-cov==6.0.0
+  - pytest-asyncio==0.24.0
+  - httpx==0.28.1
+
+**Quality Gates**:
+- Backend: 80% coverage minimum (fail build if below)
+- Frontend: Build must succeed
+- Docker: Images must build without errors
+
 ## Next Phases
 
-- **Phase 6**: Analytics engine (alerts, correlation, signals) — 20% complete
+- **Phase 6**: Analytics engine (alerts, correlation, signals) — Complete ✅
 - **Phase 7**: Database layer for historical persistence
 - **Phase 8**: Load testing and production monitoring

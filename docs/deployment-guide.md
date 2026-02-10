@@ -429,6 +429,74 @@ deploy:
 - [ ] SSL/TLS configured (if using HTTPS)
 - [ ] Backup/restore procedures documented
 
+## CI/CD Pipeline
+
+### GitHub Actions Workflow
+
+Production deployment integrates with GitHub Actions CI pipeline (`.github/workflows/ci.yml`):
+
+**Pipeline Jobs**:
+1. **Backend Tests** (Python 3.12)
+   - Install dependencies from `requirements-dev.txt`
+   - Run pytest with 80% coverage enforcement
+   - Exit on test failures or coverage violations
+
+2. **Frontend Build** (Node 20)
+   - Install dependencies via `npm ci`
+   - Build production bundle
+   - Run tests if configured (conditional)
+
+3. **Docker Build** (production images)
+   - Requires backend + frontend jobs to pass
+   - Builds multi-stage Docker images
+   - Verifies images exist after build
+
+**Trigger Conditions**:
+- Push to `master` or `main` branches
+- All pull requests
+
+**Configuration**:
+```yaml
+# Backend job timeout: 15 minutes
+# Frontend job timeout: 10 minutes
+# Docker build timeout: 20 minutes
+```
+
+**Coverage Requirements**:
+- Backend: 80% minimum coverage (enforced via `--cov-fail-under=80`)
+- Frontend: Tests run conditionally if script exists
+
+**Dependencies**:
+- `backend/requirements-dev.txt` - pytest, pytest-cov, pytest-asyncio, httpx
+- Cached pip + npm dependencies for faster builds
+
+### Deployment Workflow
+
+```bash
+# Local testing before push
+cd backend && pytest --cov=app --cov-fail-under=80
+cd ../frontend && npm run build
+
+# Push triggers CI
+git push origin master
+
+# CI verifies:
+# 1. Backend tests pass (80% coverage)
+# 2. Frontend builds successfully
+# 3. Docker images build without errors
+
+# Manual production deployment
+docker-compose -f docker-compose.prod.yml pull
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+### CI Status Monitoring
+
+Check pipeline status:
+- GitHub Actions tab: `/actions`
+- Badge in README (future)
+- PR status checks before merge
+
 ## Further Reading
 
 - [System Architecture](./system-architecture.md) - Full deployment architecture diagram
