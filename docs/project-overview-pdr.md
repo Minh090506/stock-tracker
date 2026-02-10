@@ -6,12 +6,17 @@ Real-time Vietnamese stock market tracking and analytics platform focused on VN3
 
 ## Core Features
 
-1. **Bảng giá VN30** - Live price board for VN30 stocks with bid/ask, volume, and active buyer/seller classification
+1. **Bảng giá VN30** - Live price board for VN30 stocks with bid/ask, volume, active buyer/seller classification, and sparkline charts
 2. **Chỉ số** - Real-time VN30 and VNINDEX tracking with breadth indicators and intraday charts
-3. **Phái sinh** - VN30F futures tracking with basis calculation (futures - spot index)
-4. **Theo dõi NDTNN** - Foreign investor volume tracking with speed and acceleration metrics
+3. **Phái sinh** - VN30F futures tracking with basis calculation (futures - spot index), basis trend chart, convergence indicator
+4. **Theo dõi NDTNN** - Foreign investor volume tracking with:
+   - Real-time aggregate summary (WS)
+   - Per-symbol detail tables (REST polling)
+   - Sector aggregation bar chart (10 VN30 sectors)
+   - Cumulative intraday flow chart with session-date reset
+   - Top 10 net buy + top 10 net sell tables
 5. **Mua/Bán chủ động** - Active buy/sell volume classification per trade
-6. **Analytics** - Foreign investor alerts, correlation analysis, basis divergence signals
+6. **Analytics** - Real-time alerts (VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE) with dual filtering and sound notifications
 
 ## Technical Stack
 
@@ -129,7 +134,8 @@ LOG_LEVEL=INFO
 | 4 | Backend WS + REST API | ✓ Complete | 269 | Multi-channel + Event-driven |
 | 5A | Frontend Price Board | ✓ Complete | 288 | VN30 price + sparklines |
 | 5B | Frontend Derivatives Panel | ✓ Complete | 326 | Basis trends + convergence |
-| 6 | Analytics Engine | In Progress (~65%) | 357 | PriceTracker + AlertService + REST/WS endpoints wired |
+| 5C | Frontend Foreign Flow | ✓ Complete | 357 | Hybrid WS+REST + sector/cumulative charts |
+| 6 | Analytics Engine | ✓ Complete | 357 | PriceTracker + AlertService + REST/WS + Frontend UI |
 | 7 | Database Persistence | Pending | - | PostgreSQL schema + ORM |
 | 8 | Testing & Deployment | Pending | - | Load tests + CI/CD |
 
@@ -141,11 +147,12 @@ LOG_LEVEL=INFO
 - [x] Basis calculation correct (futures - spot)
 - [x] All operations <5ms
 - [x] 357 tests passing with 84% coverage
-- [x] Frontend dashboard deployed (Price Board + Derivatives)
+- [x] Frontend dashboard deployed (Price Board + Derivatives + Foreign Flow)
 - [x] WebSocket multi-channel router with event-driven publisher
 - [x] PriceTracker engine with callbacks wired to MarketDataProcessor
 - [x] AlertService and alert buffer infrastructure complete
-- [ ] Frontend alert notifications UI (75% of Phase 6 remaining)
+- [x] Frontend alert notifications UI complete
+- [x] Foreign flow hybrid WS+REST with sector/cumulative charts
 - [ ] Database persistence working
 - [ ] Production deployment complete
 
@@ -175,6 +182,5 @@ LOG_LEVEL=INFO
 
 ## Next Steps
 
-1. **Phase 6 (Remaining ~35%)**: Frontend alert notifications UI + possible REST/WS endpoint enhancements
-2. **Phase 7**: Database schema and persistence layer
-3. **Phase 8**: Full testing suite and Docker deployment
+1. **Phase 7**: Database schema and persistence layer (PostgreSQL + asyncpg batch inserts)
+2. **Phase 8**: Full testing suite (load tests 1000+ TPS) and Docker deployment with CI/CD
