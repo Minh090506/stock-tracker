@@ -12,9 +12,13 @@ from collections.abc import Callable
 from ssi_fc_data.fc_md_client import MarketDataClient
 from ssi_fc_data.fc_md_stream import MarketDataStream
 
+from app.metrics import ssi_messages_received_total
 from app.services.ssi_field_normalizer import extract_content, parse_message
 
 logger = logging.getLogger(__name__)
+
+# Map RType → Prometheus label
+_RTYPE_LABEL = {"Trade": "trade", "Quote": "quote", "R": "foreign", "MI": "index", "B": "bar"}
 
 # Callback type: async function receiving a typed SSI message
 MessageCallback = Callable  # async (msg) -> None
@@ -132,6 +136,7 @@ class SSIStreamService:
         if result is None:
             return
         rtype, msg = result
+        ssi_messages_received_total.labels(channel=_RTYPE_LABEL.get(rtype, rtype)).inc()
         callbacks = self._callbacks.get(rtype, [])
         for cb in callbacks:
             self._schedule_callback(cb, msg)

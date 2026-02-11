@@ -7,6 +7,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from app.config import settings
+from app.metrics import ws_connections_active, ws_messages_sent_total
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,8 @@ class ConnectionManager:
     Broadcast pushes to all queues; slow clients drop oldest messages.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, channel: str = "unknown") -> None:
+        self._channel = channel
         # WebSocket → (queue, sender_task)
         self._clients: dict[WebSocket, tuple[asyncio.Queue[str], asyncio.Task]] = {}
 
@@ -32,6 +34,7 @@ class ConnectionManager:
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=settings.ws_queue_size)
         task = asyncio.create_task(self._sender(ws, queue))
         self._clients[ws] = (queue, task)
+        ws_connections_active.labels(channel=self._channel).inc()
         logger.info("WS client connected (%d total)", self.client_count)
 
     async def disconnect(self, ws: WebSocket) -> None:
@@ -39,6 +42,7 @@ class ConnectionManager:
         entry = self._clients.pop(ws, None)
         if entry is None:
             return
+        ws_connections_active.labels(channel=self._channel).dec()
         _, task = entry
         task.cancel()
         try:
@@ -54,6 +58,7 @@ class ConnectionManager:
 
     def broadcast(self, data: str) -> None:
         """Push JSON string to all client queues. Drop oldest on overflow."""
+        ws_messages_sent_total.labels(channel=self._channel).inc(len(self._clients))
         for _ws, (queue, _task) in self._clients.items():
             if queue.full():
                 try:

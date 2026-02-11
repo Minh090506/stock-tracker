@@ -1,13 +1,16 @@
 import asyncio
 import logging
+import time as time_mod
 import zoneinfo
 from contextlib import asynccontextmanager
 from datetime import datetime, time, timedelta
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 
 from app.config import settings
+from app.metrics import http_request_duration_seconds
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 
@@ -39,10 +42,10 @@ price_tracker = PriceTracker(
     processor.foreign_tracker, processor.derivatives_tracker,
 )
 processor.price_tracker = price_tracker
-market_ws_manager = ConnectionManager()
-foreign_ws_manager = ConnectionManager()
-index_ws_manager = ConnectionManager()
-alerts_ws_manager = ConnectionManager()
+market_ws_manager = ConnectionManager(channel="market")
+foreign_ws_manager = ConnectionManager(channel="foreign")
+index_ws_manager = ConnectionManager(channel="index")
+alerts_ws_manager = ConnectionManager(channel="alerts")
 
 # Cached at startup
 vn30_symbols: list[str] = []
@@ -169,6 +172,33 @@ app.add_middleware(
 app.include_router(history_router)
 app.include_router(market_router)
 app.include_router(ws_router)
+
+
+@app.middleware("http")
+async def track_request_duration(request: Request, call_next):
+    """Record HTTP request duration for Prometheus."""
+    start = time_mod.monotonic()
+    response: Response = await call_next(request)
+    elapsed = time_mod.monotonic() - start
+    # Skip /metrics and WebSocket upgrade requests
+    if "websocket" in request.headers.get("upgrade", ""):
+        return response
+    # Use route template (e.g. /api/history/{symbol}/candles) to prevent label explosion
+    route = request.scope.get("route")
+    path = route.path if route else request.url.path
+    if path != "/metrics":
+        http_request_duration_seconds.labels(
+            method=request.method,
+            path=path,
+            status_code=response.status_code,
+        ).observe(elapsed)
+    return response
+
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Expose Prometheus metrics."""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/health")

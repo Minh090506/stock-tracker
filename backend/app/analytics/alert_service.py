@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Callable
 
 from app.analytics.alert_models import Alert, AlertSeverity, AlertType
+from app.metrics import alert_signals_fired_total
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class AlertService:
         # Accept alert
         self._cooldowns[key] = now
         self._buffer.append(alert)
+        alert_signals_fired_total.labels(signal_type=alert.alert_type.value).inc()
         logger.info(
             "Alert registered: [%s] %s %s — %s",
             alert.severity.value, alert.alert_type.value,

@@ -4,8 +4,10 @@ Uses LastVol (PER-TRADE volume, NOT cumulative TotalVol) against cached
 bid/ask from QuoteCache. ATO/ATC auction trades → NEUTRAL.
 """
 
+import time
 from datetime import datetime
 
+from app.metrics import trade_classification_duration_seconds
 from app.models.domain import ClassifiedTrade, TradeType
 from app.models.ssi_messages import SSITradeMessage
 from app.services.quote_cache import QuoteCache
@@ -26,6 +28,7 @@ class TradeClassifier:
         - LastPrice <= BidPrice1 → BAN_CHU_DONG (active sell)
         - Otherwise → NEUTRAL (mid-spread or no bid/ask data)
         """
+        start = time.monotonic()
         bid, ask = self._cache.get_bid_ask(trade.symbol)
         volume = trade.last_vol  # PER-TRADE volume, NOT cumulative
 
@@ -39,7 +42,7 @@ class TradeClassifier:
         else:
             trade_type = TradeType.NEUTRAL
 
-        return ClassifiedTrade(
+        result = ClassifiedTrade(
             symbol=trade.symbol,
             price=trade.last_price,
             volume=volume,
@@ -50,3 +53,5 @@ class TradeClassifier:
             timestamp=datetime.now(),
             trading_session=trade.trading_session,
         )
+        trade_classification_duration_seconds.observe(time.monotonic() - start)
+        return result

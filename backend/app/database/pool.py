@@ -6,6 +6,7 @@ import logging
 import asyncpg
 
 from app.config import settings
+from app.metrics import db_pool_active_connections
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,11 @@ class Database:
             self.pool = None
             logger.info("Database pool closed")
 
+    def update_pool_metrics(self) -> None:
+        """Update Prometheus gauge with current pool active connections."""
+        if self.pool:
+            db_pool_active_connections.set(self.pool.get_size() - self.pool.get_idle_size())
+
     async def health_check(self) -> bool:
         """Return True if pool can execute a simple query within 5s."""
         if not self.pool:
@@ -40,6 +46,7 @@ class Database:
         try:
             async with self.pool.acquire() as conn:
                 await asyncio.wait_for(conn.fetchval("SELECT 1"), timeout=5.0)
+            self.update_pool_metrics()
             return True
         except Exception:
             logger.warning("Database health check failed", exc_info=True)

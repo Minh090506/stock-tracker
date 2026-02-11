@@ -7,9 +7,11 @@ with warning. Graceful shutdown flushes remaining records.
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 
 from app.database.pool import Database
+from app.metrics import db_write_duration_seconds
 from app.models.domain import (
     BasisPoint,
     ClassifiedTrade,
@@ -108,6 +110,7 @@ class BatchWriter:
             await self._flush_all()
 
     async def _flush_all(self) -> None:
+        self._db.update_pool_metrics()
         await self._flush_ticks()
         await self._flush_foreign()
         await self._flush_index()
@@ -140,6 +143,7 @@ class BatchWriter:
             for t in batch
         ]
         try:
+            start = time.monotonic()
             async with self._db.pool.acquire() as conn:
                 await conn.copy_records_to_table(
                     "tick_data",
@@ -149,6 +153,9 @@ class BatchWriter:
                     ],
                     records=records,
                 )
+            db_write_duration_seconds.labels(table="tick_data").observe(
+                time.monotonic() - start,
+            )
             logger.debug("Flushed %d ticks via COPY", len(records))
         except Exception:
             logger.exception("Failed to flush ticks (%d records)", len(records))
@@ -171,6 +178,7 @@ class BatchWriter:
             for d in batch
         ]
         try:
+            start = time.monotonic()
             async with self._db.pool.acquire() as conn:
                 await conn.copy_records_to_table(
                     "foreign_flow",
@@ -180,6 +188,9 @@ class BatchWriter:
                     ],
                     records=records,
                 )
+            db_write_duration_seconds.labels(table="foreign_flow").observe(
+                time.monotonic() - start,
+            )
             logger.debug("Flushed %d foreign records via COPY", len(records))
         except Exception:
             logger.exception("Failed to flush foreign (%d records)", len(records))
@@ -200,6 +211,7 @@ class BatchWriter:
             for d in batch
         ]
         try:
+            start = time.monotonic()
             async with self._db.pool.acquire() as conn:
                 await conn.copy_records_to_table(
                     "index_snapshots",
@@ -209,6 +221,9 @@ class BatchWriter:
                     ],
                     records=records,
                 )
+            db_write_duration_seconds.labels(table="index_snapshots").observe(
+                time.monotonic() - start,
+            )
             logger.debug("Flushed %d index snapshots via COPY", len(records))
         except Exception:
             logger.exception("Failed to flush index (%d records)", len(records))
@@ -228,6 +243,7 @@ class BatchWriter:
             for b in batch
         ]
         try:
+            start = time.monotonic()
             async with self._db.pool.acquire() as conn:
                 await conn.copy_records_to_table(
                     "derivatives",
@@ -237,6 +253,9 @@ class BatchWriter:
                     ],
                     records=records,
                 )
+            db_write_duration_seconds.labels(table="derivatives").observe(
+                time.monotonic() - start,
+            )
             logger.debug("Flushed %d derivatives via COPY", len(records))
         except Exception:
             logger.exception("Failed to flush derivatives (%d records)", len(records))
