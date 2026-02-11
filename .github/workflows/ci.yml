@@ -63,6 +63,57 @@ jobs:
             echo "No test script configured, skipping"
           fi
 
+  load-test-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [backend]
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Create env file
+        run: cp .env.example .env
+
+      - name: Start backend server
+        run: |
+          export WS_MAX_CONNECTIONS_PER_IP=10000
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+          curl -f http://localhost:8000/health || exit 1
+
+      - name: Run load test smoke (10 users, 30s)
+        run: |
+          cd ..
+          export PYTHONPATH="${PYTHONPATH:-}:$(pwd)"
+          locust -f backend/tests/load/locustfile.py RestUser \
+            --host http://localhost:8000 \
+            --headless -u 10 -r 5 -t 30s \
+            --csv=backend/tests/load/results/smoke \
+            --html=backend/tests/load/results/smoke.html
+
+      - name: Upload load test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-results
+          path: backend/tests/load/results/
+          retention-days: 7
+
   docker-build:
     runs-on: ubuntu-latest
     timeout-minutes: 20

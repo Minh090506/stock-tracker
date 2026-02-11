@@ -1,0 +1,71 @@
+version: "3.8"
+
+# Load testing stack with Locust
+# Usage: docker compose -f docker-compose.test.yml up --scale locust-worker=4
+
+services:
+  # Backend under test (rate limit disabled for load testing)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - SSI_CONSUMER_ID=${SSI_CONSUMER_ID}
+      - SSI_CONSUMER_SECRET=${SSI_CONSUMER_SECRET}
+      - WS_MAX_CONNECTIONS_PER_IP=10000  # Disable rate limit for load test
+      - WS_AUTH_TOKEN=${WS_AUTH_TOKEN:-}
+      - WS_THROTTLE_INTERVAL_MS=500
+      - WS_QUEUE_SIZE=100
+      - DATABASE_URL=  # No DB for load tests (optional)
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "2"
+
+  # Locust master (web UI on port 8089)
+  locust-master:
+    image: locustio/locust:2.32.0
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./backend:/app/backend:ro
+    working_dir: /app
+    command: >
+      -f backend/tests/load/locustfile.py
+      --master
+      --host http://backend:8000
+    environment:
+      - WS_AUTH_TOKEN=${WS_AUTH_TOKEN:-}
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # Locust workers (scale with --scale locust-worker=N)
+  locust-worker:
+    image: locustio/locust:2.32.0
+    volumes:
+      - ./backend:/app/backend:ro
+    working_dir: /app
+    command: >
+      -f backend/tests/load/locustfile.py
+      --worker
+      --master-host locust-master
+    environment:
+      - WS_AUTH_TOKEN=${WS_AUTH_TOKEN:-}
+    depends_on:
+      - locust-master
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1"
