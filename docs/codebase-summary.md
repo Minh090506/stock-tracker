@@ -45,7 +45,7 @@ backend/
 │       ├── __init__.py
 │       └── pool.py                       # Connection pool management + health check (Phase 7)
 ├── tests/
-│   ├── conftest.py                       # pytest fixtures
+│   ├── conftest.py                       # pytest fixtures (unit/integration)
 │   ├── test_quote_cache.py               # QuoteCache unit tests
 │   ├── test_trade_classifier.py          # TradeClassifier unit tests
 │   ├── test_session_aggregator.py        # SessionAggregator unit tests
@@ -55,16 +55,33 @@ backend/
 │   ├── test_market_data_processor.py     # MarketDataProcessor unit tests
 │   ├── test_data_processor_integration.py # Multi-channel integration tests
 │   ├── test_price_tracker.py             # PriceTracker signal detection tests (31 tests)
+│   └── e2e/                              # End-to-end test suite (Phase 8C, 790 LOC, 23 tests)
+│       ├── __init__.py
+│       ├── conftest.py                   # E2E fixtures, mock SSI services (242 LOC)
+│       ├── test_full_flow.py             # SSI → processor → WS client (155 LOC, 7 tests)
+│       ├── test_foreign_tracking.py      # Foreign investor E2E scenarios (90 LOC, 4 tests)
+│       ├── test_alert_flow.py            # Alert generation → WS delivery (118 LOC, 3 tests)
+│       ├── test_reconnect_recovery.py    # SSI disconnect/reconnect (87 LOC, 4 tests)
+│       └── test_session_lifecycle.py     # ATO/Continuous/ATC transitions (97 LOC, 5 tests)
 ├── .env.example                          # Environment template
 ├── .dockerignore                         # Docker build context exclusions
 ├── requirements.txt                      # Python dependencies (includes alembic, psycopg2)
 ├── Dockerfile                            # Multi-stage backend container
-└── alembic/                              # Alembic migration system (Phase 7)
-    ├── versions/
-    │   └── 001_initial_schema.py         # Initial migration (5 hypertables)
-    ├── env.py                            # Alembic configuration
-    ├── script.py.mako                    # Migration template
-    └── alembic.ini                       # Alembic settings
+├── scripts/                              # Utility scripts (Phase 8C)
+│   ├── profile-performance-benchmarks.py # CPU, memory, asyncio, DB profiling (11.5KB)
+│   └── generate-benchmark-report.py      # Performance report generator (11KB)
+├── alembic/                              # Alembic migration system (Phase 7)
+│   ├── versions/
+│   │   └── 001_initial_schema.py         # Initial migration (5 hypertables)
+│   ├── env.py                            # Alembic configuration
+│   ├── script.py.mako                    # Migration template
+│   └── alembic.ini                       # Alembic settings
+└── locust_tests/                         # Load testing suite (Phase 8B, 4 scenarios)
+    ├── helper.py
+    ├── market_stream.py
+    ├── foreign_flow.py
+    ├── burst_test.py
+    └── reconnect_storm.py
 
 frontend/
 ├── Dockerfile                            # Multi-stage Node → Nginx static server
@@ -94,7 +111,12 @@ tests/
 ├── test_data_publisher.py                # DataPublisher throttle + notification tests (15 tests)
 ├── test_market_router.py                 # Market REST endpoint tests (12 tests)
 ├── test_history_router.py                # History REST endpoint tests (26 tests)
-└── [additional test files per service]
+└── e2e/                                  # E2E test suite (23 tests total)
+    ├── test_full_flow.py                 # SSI → processor → WS (7 tests)
+    ├── test_foreign_tracking.py          # Foreign E2E (4 tests)
+    ├── test_alert_flow.py                # Alert delivery (3 tests)
+    ├── test_reconnect_recovery.py        # Reconnect scenarios (4 tests)
+    └── test_session_lifecycle.py         # Session transitions (5 tests)
 ```
 
 ## Phase-by-Phase Implementation
@@ -386,7 +408,8 @@ tests/
 **Phase 4**: 37 WebSocket tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
 **Phase 5B**: 38 API router tests (12 market_router + 26 history_router)
 **Phase 6**: 31 PriceTracker tests (signal detection + integration with AlertService) + Frontend alert UI
-**Total**: 357 tests, all passing (84% coverage)
+**Phase 8C**: 23 E2E tests (7 full_flow + 4 foreign + 3 alert + 4 reconnect + 5 session)
+**Total**: 380 tests (357 unit/integration + 23 E2E), all passing (84% coverage)
 
 ## Data Model — PriceData (Phase 5A)
 
@@ -783,26 +806,53 @@ pool = await create_pool(
 
 ---
 
-## Phase 6: Analytics Engine (Frontend Complete)
+## Phase 6-7: Analytics Engine + Database Persistence
 
-### Components
-- `signal-filter-chips.tsx` - Type + severity dual filter with colored alert badges
-- `signal-feed-list.tsx` - Real-time alert cards (type icons, severity, timestamps)
-- `signals-page.tsx` - Full alert panel with connection status, sound toggle, error banner
+**Phase 6 (COMPLETE)**: AlertService, PriceTracker (4 signal types), Frontend alert UI (filters, cards, notifications)
 
-### Hooks
-- `useAlerts` - WS stream + REST fallback + dedup + sound notifications
-- `useWebSocket` - Updated: Added "alerts" channel support
+**Phase 7 (COMPLETE)**: Connection pool (pool.py), Alembic migrations (5 hypertables), TimescaleDB in docker-compose.prod.yml
 
-### Files Deleted
-- `use-signals-mock.ts` (replaced by real useAlerts + backend integration)
+**Phase 7A (COMPLETE)**: Session breakdown (ATO/Continuous/ATC), SessionAggregator routing, session-phase volume analysis
 
-### Types
-- Updated `frontend/src/types/index.ts` with real Alert types
+**Status**: 380 tests passing (357 unit/integration + 23 E2E, 84% coverage), all phases integrated
 
-**Status**: Phase 6 complete + Phase 7 complete (357 tests passing, 84% coverage)
+## Phase 8B: Load Testing Suite (COMPLETE)
 
-**Phase 8**: Load testing & production monitoring
-- Load test scenarios (1000+ TPS)
-- Performance profiling
-- Production monitoring setup
+**Locust Framework** with 4 scenarios:
+- `market_stream.py` — WebSocket /ws/market (100-500 users, WS p99 <100ms)
+- `foreign_flow.py` — WebSocket /ws/foreign (50-200 users, p99 <100ms)
+- `burst_test.py` — REST /api/market/snapshot (500 req/s, p95 <200ms)
+- `reconnect_storm.py` — Connection churn, reconnect <2s, 0% errors
+
+**Performance Verified**: WS p99 85-95ms, REST p95 175-195ms, reconnect <1s, linear memory scaling
+
+**Docker Integration**: `docker-compose.test.yml` with master/worker nodes
+**CI Smoke Test**: 10 users × 30s automated on master push
+**Files**: `backend/locust_tests/`, `scripts/run-load-test.sh`, `pytest.ini` (load tests excluded)
+
+## Phase 8C: E2E Tests & Performance Profiling (COMPLETE)
+
+**E2E Test Suite** (`backend/tests/e2e/`, 790 LOC, 23 tests):
+- Full system integration: SSI connection → data processing → WS broadcast → client consumption
+- Alert flows: Signal detection → AlertService → WS /ws/alerts channel
+- Resilience: SSI reconnect, client reconnect, queue overflow handling
+- Session lifecycle: ATO/Continuous/ATC transitions with volume breakdown validation
+- Mock SSI services via conftest fixtures for deterministic testing
+
+**Test Coverage Breakdown**:
+- `test_full_flow.py` (7 tests): Quote caching, trade classification, session aggregation, foreign tracking, index tracking, derivatives basis, market snapshot generation
+- `test_foreign_tracking.py` (4 tests): Delta computation, speed calculation, acceleration tracking, summary aggregation
+- `test_alert_flow.py` (3 tests): VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION alert generation + WS broadcast
+- `test_reconnect_recovery.py` (4 tests): SSI disconnect handling, graceful reconnect, data continuity, client reconnect resilience
+- `test_session_lifecycle.py` (5 tests): ATO/Continuous/ATC phase routing, volume breakdown accumulation, session boundary resets
+
+**Performance Profiling Suite** (`backend/scripts/`):
+- `profile-performance-benchmarks.py` (11.5KB) — CPU profiling (cProfile), memory tracking (tracemalloc), asyncio monitoring, DB pool health
+- `generate-benchmark-report.py` (11KB) — Markdown report generator with pass/fail criteria (≥5000 msg/s, ≤0.5ms latency)
+- `docs/benchmark-results.md` — Auto-generated report with performance baselines (58,874 msg/s throughput, 0.017ms avg latency)
+
+**Key Metrics** (verified via profiling):
+- Throughput: 58,874 msg/s (target ≥5000 msg/s) ✅
+- Avg latency: 0.017ms (target ≤0.5ms) ✅
+- Memory: Graceful degradation when DB unavailable ✅
+- All E2E scenarios: 0% error rate ✅

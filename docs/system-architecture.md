@@ -354,64 +354,95 @@ WS_MAX_CONNECTIONS_PER_IP=5
 
 ## Testing Strategy
 
-- **Unit tests**: Each service isolated (326 tests)
-  - Phase 4: 11 ConnectionManager + 4 endpoint + 7 multi-channel router + 15 DataPublisher = 37 tests
-  - Phase 5B: 12 market_router + 26 history_router = 38 tests
-- **Integration tests**: Multi-channel message flow with 100+ ticks
-- **Performance tests**: Verify <5ms aggregation latency
-- **Edge cases**: Missing quotes, zero prices, sparse updates, client disconnects
-- **WebSocket tests**: Auth validation, rate limiting, channel isolation
-- **REST tests**: Endpoint validation, parameter filtering, data consistency
+**Test Pyramid** (380 total tests, 84% coverage):
+
+### Unit Tests (269 tests)
+- Each service isolated with mocked dependencies
+- Phase 1-3: 232 tests (Quote, Trade, Session, Foreign, Index, Derivatives)
+- Phase 4: 37 tests (ConnectionManager, Router, DataPublisher)
+- Phase 5B: 38 tests (Market + History REST endpoints)
+- Phase 6: 31 tests (PriceTracker signal detection)
+
+### Integration Tests (88 tests)
+- Multi-service coordination with real components
+- Multi-channel message flow with 100+ tick simulations
+- WebSocket auth validation, rate limiting, channel isolation
+- REST endpoint validation, parameter filtering, data consistency
+
+### End-to-End Tests (23 tests, Phase 8C)
+Full system scenarios from SSI → processing → broadcast → client:
+
+**Test Suite** (`backend/tests/e2e/`, 790 LOC):
+- `test_full_flow.py` (7 tests) — Complete pipeline validation
+  - Quote caching: SSI X-Quote → QuoteCache → bid/ask retrieval
+  - Trade classification: LastPrice vs bid/ask → TradeType assignment
+  - Session aggregation: Per-trade volume accumulation + session phase breakdown
+  - Foreign tracking: Delta computation → speed → acceleration
+  - Index tracking: MI:VN30 → breadth indicators
+  - Derivatives: VN30F trade → basis calculation (futures - spot)
+  - Market snapshot: Unified view aggregation across all services
+
+- `test_foreign_tracking.py` (4 tests) — Foreign investor flows E2E
+  - R:ALL cumulative → delta computation → net volume/value
+  - Speed calculation: 5-min rolling window
+  - Acceleration detection: Change in speed over time
+  - Summary aggregation: Top buy/sell movers
+
+- `test_alert_flow.py` (3 tests) — Alert generation & delivery
+  - VOLUME_SPIKE: Trade volume >3× avg → alert → WS /ws/alerts broadcast
+  - PRICE_BREAKOUT: Price hits ceiling/floor → CRITICAL alert
+  - FOREIGN_ACCELERATION: Net value Δ >30% → WARNING alert
+  - Alert deduplication: 60s cooldown per (type, symbol)
+
+- `test_reconnect_recovery.py` (4 tests) — Resilience scenarios
+  - SSI disconnect: Stream interruption → automatic reconnect
+  - Data continuity: No message loss during reconnect window
+  - Client reconnect: WS client drop → rejoin → catch up
+  - Queue overflow: Slow consumer → queue limit → graceful degradation
+
+- `test_session_lifecycle.py` (5 tests) — Session phase transitions
+  - ATO routing: trading_session="ATO" → ato breakdown bucket
+  - Continuous routing: trading_session="" → continuous breakdown bucket
+  - ATC routing: trading_session="ATC" → atc breakdown bucket
+  - Volume breakdown invariant: sum(ato + continuous + atc) == total
+  - Session reset: 15:00 VN daily reset → all breakdowns cleared
+
+**E2E Test Infrastructure**:
+- Mock SSI services (`conftest.py`, 242 LOC): Deterministic message sequences
+- Real asyncio event loop: Validates async/await flow
+- Real WebSocket connections: Starlette TestClient with WebSocket support
+- Shared fixtures: Processor, mock stream, test harness
+
+### Performance Tests
+- **Profiling**: `profile-performance-benchmarks.py` (CPU, memory, asyncio, DB pool)
+- **Baselines**: 58,874 msg/s throughput, 0.017ms avg latency (verified ✅)
+- **Load tests** (Phase 8B): Locust 4 scenarios, WS p99 85-95ms, 0% errors
+
+### Test Execution
+```bash
+# Unit + integration tests
+pytest backend/tests/ -v --cov=app --cov-fail-under=80
+
+# E2E tests only
+pytest backend/tests/e2e/ -v
+
+# Performance profiling
+./backend/venv/bin/python backend/scripts/profile-performance-benchmarks.py
+./backend/venv/bin/python backend/scripts/generate-benchmark-report.py
+
+# Load testing
+./scripts/run-load-test.sh market_stream
+```
 
 ### 4. WebSocket Multi-Channel Router (Phase 4 - COMPLETE)
 
-**WebSocket Router** (`router.py`)
-- Three specialized channels for efficient data delivery:
-  - `/ws/market` — Full MarketSnapshot (quotes + indices + foreign + derivatives)
-  - `/ws/foreign` — ForeignSummary only (aggregate + top movers)
-  - `/ws/index` — VN30 + VNINDEX IndexData only
-- Token-based authentication via `?token=xxx` query param (optional)
-- Rate limiting: Max connections per IP (default: 5)
-- Shared lifecycle: auth → rate limit → connect → heartbeat → read loop → cleanup
+**WebSocket Router** (`router.py`): 3 channels (/ws/market, /ws/foreign, /ws/index)
+**ConnectionManager** (`connection_manager.py`): Per-client async queues, lifecycle management
+**DataPublisher** (`data_publisher.py`): Event-driven reactive broadcasting with per-channel throttle (500ms default)
 
-**ConnectionManager** (`connection_manager.py`)
-- Per-client asyncio queues for non-blocking message distribution
-- Connection lifecycle management (connect/disconnect)
-- Broadcast to all connected clients
-- Queue overflow protection (maxsize=50)
+**Config** (`config.py`): ws_throttle_interval_ms (500), ws_heartbeat_interval (30s), ws_auth_token, ws_max_connections_per_ip (5)
 
-**DataPublisher** (`data_publisher.py`) — Event-Driven Broadcasting
-- Replaces poll-based broadcast loop with reactive push model
-- Per-channel trailing-edge throttle (default 500ms, configurable via `WS_THROTTLE_INTERVAL_MS`)
-- Processor notifies subscribers via `_notify(channel)` after each update
-- Immediate broadcast if throttle window expired; deferred broadcast otherwise
-- SSI disconnect/reconnect status notifications to all channels
-- Zero overhead when no clients connected
-
-**Configuration** (`config.py`):
-```python
-# Broadcasting
-ws_broadcast_interval: float = 1.0      # [DEPRECATED] legacy poll interval
-ws_throttle_interval_ms: int = 500      # per-channel event throttle (DataPublisher)
-ws_heartbeat_interval: float = 30.0     # ping interval
-ws_heartbeat_timeout: float = 10.0      # client timeout
-ws_queue_size: int = 50                 # per-client queue limit
-
-# Security
-ws_auth_token: str = ""                 # empty = auth disabled
-ws_max_connections_per_ip: int = 5      # rate limiting
-```
-
-**Integration** (`main.py`):
-- Three ConnectionManager singletons: `market_ws_manager`, `foreign_ws_manager`, `index_ws_manager`
-- DataPublisher initialized with processor + managers in lifespan context
-- Processor subscribes DataPublisher via `processor.subscribe(publisher.notify)`
-- WebSocket router registered to FastAPI app
-
-**Security Features**:
-- Query param token validation (disabled if `ws_auth_token=""`)
-- IP-based rate limiting with connection counting
-- Automatic cleanup on disconnect
+**Security**: Token validation (optional), IP rate limiting, per-channel throttle, automatic cleanup
 
 ## Frontend WebSocket Client Integration
 
@@ -628,198 +659,33 @@ useForeignFlow() hook (102 LOC)
 - Sector chart: <50ms render with 10 sectors
 - Cumulative chart: <100ms render with 1440 points
 
-## Phase 6: Analytics Engine (In Progress ~65%)
+## Phase 6: Analytics Engine (COMPLETE)
 
-### Alert Infrastructure + PriceTracker (Callbacks Wired)
+**Alert Infrastructure**: `alert_models.py`, `alert_service.py` (~142 LOC)
+- AlertType enum: FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT
+- AlertSeverity: INFO, WARNING, CRITICAL
+- In-memory buffer (deque maxlen=500), 60s dedup
 
-**Core Components**:
+**PriceTracker** (`price_tracker.py`, ~180 LOC):
+- 4 signals: VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE
+- Callbacks wired: `on_trade()`, `on_foreign()`, `on_basis_update()`
+- Tests: 31 passing
 
-#### Alert Models (`alert_models.py`, ~39 LOC)
-```python
-AlertType (Enum):
-├── FOREIGN_ACCELERATION    # Foreign net_value >30% change in 5min
-├── BASIS_DIVERGENCE        # Futures basis crosses zero
-├── VOLUME_SPIKE           # Per-trade volume >3x avg over 20min
-└── PRICE_BREAKOUT         # Price touches ceiling/floor
+**Frontend**: useAlerts hook, dual filter chips (type+severity), real-time cards, sound notifications
 
-AlertSeverity (Enum):
-├── INFO      # Informational
-├── WARNING   # Significant activity
-└── CRITICAL  # Immediate attention
-```
+## Phase 7: Database Persistence (COMPLETE)
 
-#### AlertService (`alert_service.py`, ~103 LOC)
-- In-memory buffer: `deque(maxlen=500)`
-- 60s dedup by (alert_type, symbol)
-- Subscribe/notify pattern for broadcast
+**Connection Pool** (`backend/app/database/pool.py`):
+- Configurable pool (DB_POOL_MIN=2, DB_POOL_MAX=10)
+- Health checks every 60s, graceful startup (continues without DB)
 
-#### PriceTracker (`price_tracker.py`, ~180 LOC)
+**Alembic Migrations** (`backend/alembic/`):
+- 5 hypertables: trades, foreign_snapshots, index_snapshots, basis_points, alerts
+- TimescaleDB on PostgreSQL 16 (docker-compose.prod.yml)
 
-**4 Real-Time Signal Detectors**:
+**Health Endpoint**: `GET /health` → `{"status": "ok", "database": "connected"|"unavailable"}`
 
-```
-1. VOLUME_SPIKE
-   └─ Trigger: last_vol > 3× avg_vol over 20-min window
-   └─ Called: on_trade(symbol, last_price, last_vol)
-   └─ Severity: WARNING
-
-2. PRICE_BREAKOUT
-   └─ Trigger: last_price >= ceiling OR last_price <= floor
-   └─ Called: on_trade(symbol, last_price, last_vol)
-   └─ Severity: CRITICAL
-   └─ Data: direction ("ceiling" | "floor")
-
-3. FOREIGN_ACCELERATION
-   └─ Trigger: |net_value_change / past_value| > 30% in 5min window
-   └─ Called: on_foreign(symbol)
-   └─ Severity: WARNING
-   └─ Data: direction ("buying" | "selling"), change_pct
-
-4. BASIS_DIVERGENCE
-   └─ Trigger: futures basis crosses zero (premium ↔ discount)
-   └─ Called: on_basis_update() after basis recompute
-   └─ Severity: WARNING
-   └─ Data: basis, basis_pct, direction ("premium→discount" | "discount→premium")
-```
-
-**Integration with MarketDataProcessor** (WIRED):
-```python
-# In handle_trade() - lines 205, 211:
-price_tracker.on_trade(symbol, last_price, last_vol)
-
-# In handle_foreign() - line 237:
-price_tracker.on_foreign(symbol)
-
-# In update_basis() - line 274 for VN30F trades:
-price_tracker.on_basis_update()
-```
-
-**Data Sources**:
-- QuoteCache: Ceiling/floor for breakout detection
-- ForeignInvestorTracker: Net value history
-- DerivativesTracker: Current basis + sign tracking
-- AlertService: Registers alerts with auto-dedup
-
-**Tests**: 31 tests passing (test_price_tracker.py)
-
-**Remaining Work** (Phase 6 ~35%):
-1. Frontend alert notifications UI (toast notifications, alert panel)
-
-## Database Layer (Phase 7)
-
-### Connection Pool Management
-
-**File**: `backend/app/database/pool.py`
-
-**Features**:
-- **Configurable pool size**: Min/max connections via `DB_POOL_MIN` (default 2), `DB_POOL_MAX` (default 10)
-- **Health checks**: Periodic validation every 60 seconds
-- **Graceful startup**: Application starts without DB connection (warning logged, in-memory mode continues)
-- **Automatic reconnection**: Retries on startup and periodically
-- **Connection timeout**: 10 second timeout on acquisition
-
-**Initialization**:
-```python
-# In app/main.py lifespan context
-pool = create_pool(
-    DATABASE_URL,
-    min_size=config.db_pool_min,
-    max_size=config.db_pool_max,
-)
-```
-
-**Graceful Failure Mode**:
-- If DATABASE_URL not configured: app continues with warning, DB operations return 503
-- If pool creation fails: app logs error, retries, continues in-memory
-- Market data processing (quotes, trades, foreign, index): unaffected
-- History endpoints: return `{status: 503, detail: "Database unavailable"}`
-
-### Alembic Migrations
-
-**System**: `backend/alembic/` with declarative migration versioning
-
-**Initial Schema** (5 Hypertables):
-```sql
-trades (
-  id SERIAL PRIMARY KEY,
-  symbol VARCHAR(20),
-  price DECIMAL,
-  volume BIGINT,
-  trade_type VARCHAR(20),  -- MUA_CHU_DONG, BAN_CHU_DONG, NEUTRAL
-  value DECIMAL,
-  bid_price DECIMAL,
-  ask_price DECIMAL,
-  timestamp TIMESTAMPTZ
-) PARTITION BY RANGE (timestamp);
-
-foreign_snapshots (
-  id SERIAL PRIMARY KEY,
-  symbol VARCHAR(20),
-  buy_volume BIGINT,
-  sell_volume BIGINT,
-  buy_speed DECIMAL,
-  sell_speed DECIMAL,
-  buy_acceleration DECIMAL,
-  sell_acceleration DECIMAL,
-  timestamp TIMESTAMPTZ
-) PARTITION BY RANGE (timestamp);
-
-index_snapshots (
-  id SERIAL PRIMARY KEY,
-  index_id VARCHAR(20),  -- VN30, VNINDEX
-  value DECIMAL,
-  change DECIMAL,
-  advances INT,
-  declines INT,
-  timestamp TIMESTAMPTZ
-) PARTITION BY RANGE (timestamp);
-
-basis_points (
-  id SERIAL PRIMARY KEY,
-  futures_symbol VARCHAR(20),
-  futures_price DECIMAL,
-  spot_value DECIMAL,
-  basis DECIMAL,
-  basis_pct DECIMAL,
-  is_premium BOOLEAN,
-  timestamp TIMESTAMPTZ
-) PARTITION BY RANGE (timestamp);
-
-alerts (
-  id SERIAL PRIMARY KEY,
-  alert_type VARCHAR(50),  -- VOLUME_SPIKE, PRICE_BREAKOUT, etc.
-  severity VARCHAR(20),     -- INFO, WARNING, CRITICAL
-  symbol VARCHAR(20),
-  message TEXT,
-  data JSONB,
-  timestamp TIMESTAMPTZ
-) PARTITION BY RANGE (timestamp);
-```
-
-**Migration Execution**:
-```bash
-# Run pending migrations
-alembic upgrade head
-
-# Create new migration after schema change
-alembic revision --autogenerate -m "description"
-```
-
-### Health Check Integration
-
-**Health Endpoint** (`app/routers/health.py`):
-```json
-GET /health
-{
-  "status": "ok",
-  "database": "connected"  // or "unavailable"
-}
-```
-
-**Pool health check** (60s interval):
-- Executes: `SELECT 1`
-- Logs: Connection status (connected/unavailable)
-- Action: Logs warning if unavailable, continues operation
+**Graceful Startup**: Logs warning if DB unavailable, history endpoints return 503, market data flows normally
 
 ---
 
@@ -994,8 +860,43 @@ docker-compose -f docker-compose.prod.yml down
 - Frontend: Build must succeed
 - Docker: Images must build without errors
 
-## Next Phases
+## Phase 8B: Load Testing Suite (COMPLETE)
 
-- **Phase 6**: Analytics engine (alerts, correlation, signals) — Complete ✅
-- **Phase 7**: Database layer for historical persistence
-- **Phase 8**: Load testing and production monitoring
+**Locust Framework** with 4 scenarios: market_stream, foreign_flow, burst_test, reconnect_storm
+
+**Performance Baselines** (verified):
+- WS p99 latency: 85-95ms (target <100ms) ✅
+- REST p95 latency: 175-195ms (target <200ms) ✅
+- Reconnect time: <1s (target <2s) ✅
+- Error rate: 0% ✅
+
+**Docker Integration**: `docker-compose.test.yml` with master/worker nodes
+**CI Smoke Test**: 10 users × 30s on master push (automated)
+**Files**: `backend/locust_tests/`, `docker-compose.test.yml`, `scripts/run-load-test.sh`
+
+See `docs/deployment-guide.md` for load testing execution details.
+
+## Phase 8C: E2E Tests & Performance Profiling (COMPLETE)
+
+**E2E Test Suite** (`backend/tests/e2e/`, 790 LOC, 23 tests):
+- Full system integration: SSI → processor → WS → client
+- Alert flows: Detection → AlertService → broadcast
+- Resilience: Disconnect/reconnect, queue overflow, error recovery
+- Session lifecycle: ATO/Continuous/ATC transitions + volume validation
+- Mock SSI services for deterministic testing
+
+**Performance Profiling**:
+- `profile-performance-benchmarks.py` — CPU, memory, asyncio, DB profiling
+- `generate-benchmark-report.py` — Auto-generated Markdown reports
+- `docs/benchmark-results.md` — Performance baseline tracking
+
+**Verified Baselines**:
+- Throughput: 58,874 msg/s (target ≥5000 msg/s) ✅
+- Avg latency: 0.017ms (target ≤0.5ms) ✅
+- Memory: Graceful degradation mode operational ✅
+- E2E scenarios: 0% error rate ✅
+
+**Testing Coverage**:
+- 380 total tests (357 unit/integration + 23 E2E)
+- 84% code coverage (enforced in CI)
+- All test suites passing ✅

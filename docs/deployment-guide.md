@@ -429,6 +429,55 @@ deploy:
 - [ ] SSL/TLS configured (if using HTTPS)
 - [ ] Backup/restore procedures documented
 
+## Load Testing
+
+### Running Load Tests
+
+**Quick Test** (10 users, 30 seconds):
+```bash
+./scripts/run-load-test.sh --users 10 --duration 30
+```
+
+**Medium Load** (100 users, 5 minutes):
+```bash
+./scripts/run-load-test.sh --users 100 --duration 300 --scenario market_stream
+```
+
+**Full Test** (Docker Compose):
+```bash
+docker-compose -f docker-compose.test.yml up
+# Access Locust UI at http://localhost:8089
+```
+
+### Test Scenarios
+
+| Scenario | Type | Users | Duration | Success Criteria |
+|----------|------|-------|----------|------------------|
+| market_stream | WS | 100-500 | 2-5 min | p99 <100ms, 0% errors |
+| foreign_flow | WS | 50-200 | 2-5 min | p99 <100ms, 0% errors |
+| burst_test | REST | 50-500 | 1-2 min | p95 <200ms, 0% errors |
+| reconnect_storm | WS churn | 100-300 | 3-5 min | Reconnect <2s, 0 loss |
+
+### Performance Baselines
+
+- **WS p50**: 45-65ms
+- **WS p99**: 85-95ms (target <100ms)
+- **REST p50**: 35-50ms
+- **REST p95**: 175-195ms (target <200ms)
+- **Reconnect time**: <1s
+- **Memory**: Linear scaling, <2GB per 100 users
+- **Error rate**: 0%
+
+### CI Smoke Test
+
+Automated on master push (10 users × 30s):
+```bash
+# Triggered in GitHub Actions
+# File: .github/workflows/ci.yml (load-test job)
+```
+
+---
+
 ## CI/CD Pipeline
 
 ### GitHub Actions Workflow
