@@ -132,16 +132,16 @@ tests/
 - `app/config.py` - Settings from `.env`
 
 ### Phase 2: SSI Integration & Stream Demux (COMPLETE)
-- OAuth2 authentication
-- WebSocket connection
-- Message demultiplexing by RType
-- Field normalization
+- OAuth2 authentication (with SimpleNamespace config, SSIAccessTokenRequest dataclass)
+- WebSocket connection to fc-datahub.ssi.com.vn (NOT fc-data.ssi.com.vn!)
+- Message demultiplexing by RType; X:ALL channel split into Trade+Quote via parse_message_multi()
+- Field normalization (handles double JSON parsing in SSI Content field)
 
 **Key Files**:
-- `app/services/ssi_auth_service.py` - OAuth2 token management
-- `app/services/ssi_stream_service.py` - SignalR WebSocket
-- `app/services/ssi_market_service.py` - REST API lookups
-- `app/services/ssi_field_normalizer.py` - Field mapping
+- `app/services/ssi_auth_service.py` - OAuth2 token management (SimpleNamespace config)
+- `app/services/ssi_stream_service.py` - SignalR WebSocket (fc-datahub.ssi.com.vn domain)
+- `app/services/ssi_market_service.py` - REST API lookups (fc-data.ssi.com.vn), dataclass models
+- `app/services/ssi_field_normalizer.py` - Field mapping + parse_message_multi() for X:ALL splitting
 - `app/services/futures_resolver.py` - VN30F contract resolution
 - `app/models/ssi_messages.py` - Message models
 
@@ -688,7 +688,7 @@ FASTAPI_ENV=development
 - Code review grade: A-
 - Test coverage: 357 total tests (38 new router tests, 31 PriceTracker tests)
 
-## Phase 6: Analytics Engine (In Progress ~65%)
+## Phase 6: Analytics Engine (COMPLETE 100%)
 
 ### Core Alert Infrastructure (COMPLETE)
 - Alert models: AlertType (FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT)
@@ -724,7 +724,7 @@ FASTAPI_ENV=development
 
 **Tests**: `tests/test_price_tracker.py` (31 tests, all passing)
 
-**Status**: Phase 6 complete (357 tests passing, 84% coverage)
+**Status**: Phase 6 COMPLETE (357 tests passing, 80% coverage enforced in CI)
 
 ---
 
@@ -814,7 +814,7 @@ pool = await create_pool(
 
 **Phase 7A (COMPLETE)**: Session breakdown (ATO/Continuous/ATC), SessionAggregator routing, session-phase volume analysis
 
-**Status**: 380 tests passing (357 unit/integration + 23 E2E, 84% coverage), all phases integrated
+**Status**: 394 tests passing (357 unit/integration + 23 E2E, 14 load tests), 80% CI coverage, all phases integrated
 
 ## Phase 8B: Load Testing Suite (COMPLETE)
 
@@ -831,6 +831,49 @@ pool = await create_pool(
 **Files**: `backend/locust_tests/`, `scripts/run-load-test.sh`, `pytest.ini` (load tests excluded)
 
 ## Phase 8C: E2E Tests & Performance Profiling (COMPLETE)
+
+**Monitoring Stack** (Phase 8D):
+
+**Prometheus** (`monitoring/prometheus.yml`, v2.53.0):
+- Scrapes `/metrics` endpoint every 30s
+- Retention: 30 days
+- Stores time-series metrics for performance analysis
+
+**Grafana** (v11.1.0, 4 dashboards auto-provisioned):
+- Application Performance: Request rates, latencies, error counts
+- WebSocket Monitoring: Connected clients, message throughput
+- Database Health: Pool connections, query latency, transaction counts
+- System Metrics: CPU, memory, disk via Node Exporter
+
+**Node Exporter** (v1.8.1):
+- System-level metrics (CPU, memory, disk, network)
+- Integrated with Prometheus for infrastructure visibility
+
+**Metrics Instrumentation** (`backend/app/metrics.py`, 74 LOC):
+- `prometheus_client>=0.21.0` dependency
+- HTTP request duration histogram (bucket sizes: 0.01, 0.1, 1, 10s)
+- Counters for SSI messages, WS connections, trade classifications, alerts, DB writes
+- Per-endpoint latency tracking
+
+**Deployment Integration** (`docker-compose.prod.yml` updated):
+- All 7 services orchestrated (Nginx, Backend, Frontend, TimescaleDB, Prometheus, Grafana, Node Exporter)
+- Health checks for each service
+- Persistent volumes for Prometheus data + Grafana configs
+
+**Deployment Script** (`scripts/deploy.sh`):
+- One-command production deployment with preflight checks
+- Verifies Docker, Docker Compose, environment configuration
+- Runs health checks post-deployment
+- Logs deployment status and system resources
+
+**Documentation Suite** (5 new files):
+- `docs/README.md` — Documentation index and navigation
+- `docs/api-reference.md` — API endpoint documentation
+- `docs/architecture.md` — System architecture detailed diagrams
+- `docs/deployment.md` — Production deployment procedures
+- `docs/monitoring.md` — Grafana dashboards and metrics guide
+
+**Overall Status**: Phase 8D COMPLETE (monitoring stack operational, docs updated, deploy.sh ready)
 
 **E2E Test Suite** (`backend/tests/e2e/`, 790 LOC, 23 tests):
 - Full system integration: SSI connection → data processing → WS broadcast → client consumption

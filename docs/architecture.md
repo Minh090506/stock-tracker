@@ -69,7 +69,7 @@ sequenceDiagram
     participant REST as REST Clients
     participant DB as TimescaleDB
 
-    SSI->>MDP: X-TRADE message
+    SSI->>MDP: X:ALL message (Trade+Quote combined)
     MDP->>Services: Route by message type
 
     Note over Services: TradeClassifier → buy/sell/neutral<br/>SessionAggregator → per-phase volume<br/>ForeignInvestorTracker → delta + speed<br/>IndexTracker → VN30/VNINDEX<br/>DerivativesTracker → basis calc
@@ -89,12 +89,11 @@ sequenceDiagram
 flowchart LR
     MSG[SSI Message] --> TYPE{Message Type}
 
-    TYPE -->|X-TRADE| TC[TradeClassifier]
-    TYPE -->|X-Quote| QC[QuoteCache]
+    TYPE -->|X:ALL Trade| TC[TradeClassifier]
+    TYPE -->|X:ALL Quote| QC[QuoteCache]
     TYPE -->|R:ALL| FIT[ForeignInvestorTracker]
-    TYPE -->|MI:VN30| IT[IndexTracker]
-    TYPE -->|MI:VNINDEX| IT
-    TYPE -->|VN30F trade| DT[DerivativesTracker]
+    TYPE -->|MI:ALL| IT[IndexTracker]
+    TYPE -->|X:ALL VN30F| DT[DerivativesTracker]
 
     TC --> SA[SessionAggregator]
     TC --> PT[PriceTracker]

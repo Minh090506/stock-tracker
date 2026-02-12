@@ -2,6 +2,44 @@
 
 Coding standards for VN Stock Tracker (Python + TypeScript/React).
 
+## Prometheus Metrics & Observability
+
+### Metrics Instrumentation Pattern
+
+**File**: `backend/app/metrics.py`
+
+**Core Types**:
+- **Counter**: Monotonically increasing values (HTTP requests, WS messages, alerts)
+- **Histogram**: Distribution of observations (request latency, processing time)
+- **Gauge**: Point-in-time values (active connections, queue depth)
+
+**Standard Buckets** (latency histograms):
+```python
+from prometheus_client import Histogram
+
+request_duration = Histogram(
+    'request_duration_seconds',
+    'HTTP request duration in seconds',
+    buckets=[0.01, 0.1, 1, 10]  # 10ms, 100ms, 1s, 10s
+)
+```
+
+**Middleware Pattern**:
+```python
+# In FastAPI lifespan
+@app.middleware("http")
+async def add_metrics_middleware(request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    request_duration.observe(time.time() - start)
+    return response
+```
+
+**Endpoint Convention**:
+- Route: `GET /metrics`
+- Returns Prometheus text format (ContentType: `text/plain`)
+- No authentication required (expose on internal network only)
+
 ---
 
 ## Python Standards (Backend)
@@ -150,6 +188,64 @@ class Settings(BaseSettings):
     database_url: str | None = None  # Graceful startup
     db_pool_min: int = 2
     db_pool_max: int = 10
+```
+
+### SSI FastConnect Integration (ssi-fc-data v2.2.2)
+
+**Critical: Two Different Domains**:
+- **REST API** (market lookups): `https://fc-data.ssi.com.vn/`
+- **WebSocket/SignalR** (streaming): `https://fc-datahub.ssi.com.vn/` (DIFFERENT!)
+- Must use correct domain for each service, or 502 errors occur
+
+**Authentication Configuration**:
+- ssi-fc-data v2.2.2 requires **SimpleNamespace** (attribute access), NOT dict
+- Example (CORRECT):
+```python
+from types import SimpleNamespace
+config = SimpleNamespace(
+    consumerID=settings.ssi_consumer_id,
+    consumerSecret=settings.ssi_consumer_secret
+)
+# Correct: config.consumerID
+```
+- Example (WRONG):
+```python
+config = {
+    'consumerID': settings.ssi_consumer_id,
+    'consumerSecret': settings.ssi_consumer_secret
+}
+# Wrong: config['consumerID'] — will cause AttributeError
+```
+
+**Authentication Request Model**:
+- Use `SSIAccessTokenRequest` dataclass from `ssi_fc_data.model.model`
+- Enables proper type checking and API contract alignment
+
+**REST API Requests**:
+- Use dataclass models: `IndexComponentsReq`, `SecuritiesReq` from ssi-fc-data
+- Provides type safety and aligns with library expectations
+
+**WebSocket Channel Names** (Corrected):
+- CORRECT channels: `X:ALL`, `R:ALL`, `MI:ALL`, `B:ALL`
+- ONE subscription per channel type (SSI allows only one X, one R, etc.)
+- `X:ALL` returns combined Trade+Quote messages with RType="X"
+- Must use `parse_message_multi()` to split RType="X" into separate Trade+Quote results
+
+**Content Field Double JSON Parsing**:
+- SSI sends Content field as JSON string inside dict: `{"Content": '{"field": "value"}'}`
+- Must parse twice:
+```python
+outer = json.loads(response.text)
+content = json.loads(outer['Content'])  # Second parse
+```
+- Handled in `ssi_field_normalizer.py` via `extract_content()` function
+
+**Message Handling**:
+- After parsing, use `parse_message_multi()` to split messages:
+```python
+from ssi_field_normalizer import parse_message_multi
+results = parse_message_multi(content, rtype="X")
+# Returns list of Trade and Quote messages separately
 ```
 
 ---

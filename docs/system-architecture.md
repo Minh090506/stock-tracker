@@ -3,39 +3,51 @@
 ## High-Level Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│               SSI FastConnect WebSocket (SignalR)            │
-├─────────────────────────────────────────────────────────────┤
-│ X-TRADE:ALL     Trade events (LastPrice, LastVol per-trade) │
-│ X-Quote:ALL     Order book (BidPrice1-10, AskPrice1-10)     │
-│ R:ALL           Foreign investor (FBuyVol, FSellVol cum.)    │
-│ MI:VN30         VN30 index value                             │
-│ MI:VNINDEX      VNINDEX value                                │
-│ X:VN30F{YYMM}   Derivatives futures                          │
-│ B:ALL           OHLC bars for charting                       │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│    SSI FastConnect WebSocket (SignalR)                           │
+│    Domain: https://fc-datahub.ssi.com.vn/ (NOT fc-data.ssi...)   │
+├──────────────────────────────────────────────────────────────────┤
+│ X:ALL           Trade + Quote events combined (RType="X")        │
+│ R:ALL           Foreign investor (FBuyVol, FSellVol cumulative)   │
+│ MI:ALL          VN30 + VNINDEX index values                       │
+│ B:ALL           OHLC bars for charting                            │
+│                                                                   │
+│ Note: Each channel type subscribed ONCE; X:ALL splits into       │
+│       Trade + Quote messages via parse_message_multi()           │
+└──────────────────────────────────────────────────────────────────┘
                             │
                             ▼
                 ┌───────────────────────┐
                 │  FastAPI Backend      │
                 │  (Python 3.12+)       │
-                └───────────────────────┘
-                            │
-        ┌───────────────────┼───────────────────┐
-        ▼                   ▼                   ▼
-    ┌─────────┐      ┌──────────────┐    ┌───────────┐    ┌──────────────┐
-    │ Market  │      │ Market Data  │    │ Analytics │    │ Database     │
-    │ Data    │      │ Processor    │    │ Engine    │    │ Layer        │
-    │ Services│      │              │    │ (Phase 6) │    │ (asyncpg)    │
-    └─────────┘      └──────────────┘    └───────────┘    └──────────────┘
-        │                   │                   │
-        │                   ├── QuoteCache      ├── AlertService
-        │                   ├── TradeClassifier │    ├── In-memory buffer (deque maxlen=500)
-        │                   ├── SessionAggregator│   ├── 60s dedup by (type+symbol)
-        │                   ├── ForeignInvestorTracker│ Subscribe/notify pattern
-        │                   ├── IndexTracker     │    ├── PriceTracker (4 signal types)
-        │                   └── DerivativesTracker    ├── REST: GET /api/market/alerts
-        │                                            └── WS: /ws/alerts channel
+                └──────────┬────────────┘
+                           │ /metrics endpoint
+        ┌──────────────────┼──────────────────┬──────────────┐
+        ▼                  ▼                  ▼              ▼
+    ┌─────────┐      ┌──────────────┐   ┌──────────────┐  ┌─────────────┐
+    │ Market  │      │ Market Data  │   │  Analytics   │  │ Database    │
+    │ Data    │      │ Processor    │   │  Engine      │  │ Layer       │
+    │Services │      │              │   │ (Phase 6)    │  │ (asyncpg)   │
+    └─────────┘      └──────────────┘   └──────────────┘  └─────────────┘
+        │                   │
+        ├─ QuoteCache      ├── AlertService
+        │                   │    ├── In-memory buffer (deque maxlen=500)
+        │                   │    ├── 60s dedup by (type+symbol)
+        │                   │    ├── Subscribe/notify pattern
+        │                   │    ├── PriceTracker (4 signal types)
+        │                   │    ├── REST: GET /api/market/alerts
+        │                   │    └── WS: /ws/alerts channel
+        │
+        ├─ Database Layer (Phase 7)
+        │  └─ Connection Pool (pool.py)
+        │     ├─ Min/max configurable (DB_POOL_MIN, DB_POOL_MAX)
+        │     ├─ Health check (60s interval)
+        │     └─ Graceful startup (optional DB connection)
+        │
+        └─ Monitoring Stack (Phase 8D)
+           ├─ Prometheus v2.53.0 (scrapes /metrics every 30s)
+           ├─ Grafana v11.1.0 (4 auto-provisioned dashboards)
+           └─ Node Exporter v1.8.1 (system metrics)
         │
         ├─ Database Layer (Phase 7)
         │  └─ Connection Pool (pool.py)
@@ -88,23 +100,26 @@
 
 **SSIAuthService** (`ssi_auth_service.py`)
 - Handles OAuth2 authentication with SSI
-- Manages access tokens and refresh
+- Manages access tokens and refresh via SSIAccessTokenRequest dataclass
+- Config uses SimpleNamespace (attribute access required by ssi-fc-data v2.2.2)
 - Provides credentials for market and stream services
 
 **SSIMarketService** (`ssi_market_service.py`)
-- REST API for market data lookups
+- REST API for market data lookups (Domain: https://fc-data.ssi.com.vn/)
+- Uses proper dataclasses: IndexComponentsReq, SecuritiesReq from ssi-fc-data
 - Futures contract resolver (active VN30F months)
 - Instrument information retrieval
 
 **SSIStreamService** (`ssi_stream_service.py`)
-- SignalR WebSocket connection management
-- Message parsing and routing
+- SignalR WebSocket connection management (Domain: https://fc-datahub.ssi.com.vn/)
+- Message parsing via parse_message_multi() — handles RType="X" splitting
 - Auto-reconnect with exponential backoff
 - Callback registration for message types
 
 **SSIFieldNormalizer** (`ssi_field_normalizer.py`)
 - Converts SSI field names to internal schema
-- Handles data type transformations
+- Handles double JSON parsing: SSI Content field is JSON string inside dict
+- Splits RType="X" messages into Trade + Quote via parse_message_multi()
 - Ensures consistent naming across services
 
 **FuturesResolver** (`futures_resolver.py`)
@@ -118,7 +133,7 @@ All services stateful and initialized in `MarketDataProcessor`:
 
 **QuoteCache** (`quote_cache.py`)
 - **Purpose**: Store latest bid/ask prices per symbol
-- **Input**: X-Quote:ALL messages
+- **Input**: X:ALL Quote data (extracted by parse_message_multi)
 - **Output**: Bid/ask lookups for trade classification
 - **Lifecycle**: Persistent in-memory dictionary; reset daily at 15:00
 
@@ -134,7 +149,7 @@ bid, ask = processor.quote_cache.get_bid_ask("VNM")
   - Compare trade.last_price against bid/ask thresholds
   - Preserve `trading_session` field (ATO/ATC/continuous) from SSI trade message
   - Mark ATO/ATC as NEUTRAL (batch auctions) for classification type
-- **Input**: X-TRADE:ALL messages (includes trading_session field)
+- **Input**: X:ALL Trade data (extracted by parse_message_multi, includes trading_session)
 - **Output**: ClassifiedTrade with trade_type, volume, value, trading_session
 - **Performance**: <1ms per trade
 
@@ -173,7 +188,7 @@ else:
 
 **IndexTracker** (`index_tracker.py`)
 - **Purpose**: Track VN30 and VNINDEX real-time values
-- **Input**: MI:VN30, MI:VNINDEX messages
+- **Input**: MI:ALL messages (VN30, VNINDEX)
 - **Data**: Index value, change, change_pct, advances, declines
 - **Computed**: advance_ratio = advances / (advances + declines)
 - **Output**: IndexData with breadth indicators
@@ -181,7 +196,7 @@ else:
 
 **DerivativesTracker** (`derivatives_tracker.py`)
 - **Purpose**: Track VN30F futures and compute basis
-- **Input**: X-TRADE messages for symbols starting with "VN30F"
+- **Input**: X:ALL Trade data for symbols starting with "VN30F"
 - **Logic**:
   - Store futures_price by symbol
   - Compute basis = futures_price - IndexTracker.get_vn30_value()
@@ -306,10 +321,13 @@ MarketSnapshot (Unified API)
 
 ## Message Flow (Summary)
 
-**Trade**: X-TRADE → handle_trade → VN30F? (YES: DerivativesTracker, NO: TradeClassifier → SessionAggregator)
-**Quote**: X-Quote → handle_quote → QuoteCache
-**Foreign**: R:ALL → handle_foreign → ForeignInvestorTracker (delta, speed, acceleration)
-**Index**: MI:* → handle_index → IndexTracker (breadth, sparkline)
+SSI channels (fc-datahub.ssi.com.vn) stream messages split by parse_message_multi():
+
+**X:ALL (Trade + Quote)**: parse_message_multi() splits into Trade + Quote messages
+  - **Trade**: VN30F? → DerivativesTracker | Regular → TradeClassifier → SessionAggregator
+  - **Quote**: → QuoteCache (bid/ask for trade classification)
+**R:ALL (Foreign)**: → ForeignInvestorTracker (delta, speed, acceleration)
+**MI:ALL (Indices)**: → IndexTracker (VN30 + VNINDEX, breadth, sparkline)
 **Basis**: VN30F trade + VN30 value → DerivativesTracker (basis = futures - spot)
 
 ## Daily Reset Cycle
@@ -374,11 +392,11 @@ Full system scenarios from SSI → processing → broadcast → client:
 
 **Test Suite** (`backend/tests/e2e/`, 790 LOC):
 - `test_full_flow.py` (7 tests) — Complete pipeline validation
-  - Quote caching: SSI X-Quote → QuoteCache → bid/ask retrieval
+  - Quote caching: SSI X:ALL → parse_message_multi → QuoteCache → bid/ask retrieval
   - Trade classification: LastPrice vs bid/ask → TradeType assignment
   - Session aggregation: Per-trade volume accumulation + session phase breakdown
   - Foreign tracking: Delta computation → speed → acceleration
-  - Index tracking: MI:VN30 → breadth indicators
+  - Index tracking: MI:ALL → breadth indicators
   - Derivatives: VN30F trade → basis calculation (futures - spot)
   - Market snapshot: Unified view aggregation across all services
 
@@ -693,7 +711,7 @@ useForeignFlow() hook (102 LOC)
 
 ### Overview
 
-Production deployment uses a containerized architecture with four services coordinated via docker-compose:
+Production deployment uses a containerized architecture with seven services coordinated via docker-compose:
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -748,7 +766,7 @@ Production deployment uses a containerized architecture with four services coord
 - Memory limits: 128MB max, 64MB reserved
 - Static-only (no proxy to backend; handled by main Nginx)
 
-**TimescaleDB** (`docker-compose.prod.yml`) — NEW (Phase 7):
+**TimescaleDB** (`docker-compose.prod.yml`) — Phase 7:
 - Image: `timescale/timescaledb:2.16-pg16`
 - Credentials: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` via `.env` substitution
 - Health check: `pg_isready -U $POSTGRES_USER` (10s interval, 5s timeout)
@@ -756,6 +774,27 @@ Production deployment uses a containerized architecture with four services coord
 - Memory limits: 1GB max, 512MB reserved
 - Network: Connected to `app-network` bridge
 - Backward compat: Supports graceful startup (app continues if unavailable)
+
+**Prometheus** (`docker-compose.prod.yml`) — Phase 8D:
+- Image: `prom/prometheus:v2.53.0`
+- Scrape config: Targets `/metrics` endpoint every 30s
+- Data retention: 30 days
+- Port: 9090 (internal only, via Nginx proxy)
+- Persistent volume: `prometheus_data`
+
+**Grafana** (`docker-compose.prod.yml`) — Phase 8D:
+- Image: `grafana/grafana:v11.1.0`
+- Port: 3000 (internal only, via Nginx proxy)
+- Auto-provisioned dashboards (4 dashboards)
+- Data source: Prometheus (auto-configured)
+- Persistent volume: `grafana_data`
+
+**Node Exporter** (`docker-compose.prod.yml`) — Phase 8D:
+- Image: `prom/node-exporter:v1.8.1`
+- Metrics: CPU, memory, disk, network
+- Port: 9100 (Prometheus scrapes internally)
+- No persistent storage needed
+- NOTE: Skipped on macOS (rslave mount not supported by Docker Desktop)
 
 ### Network Configuration
 

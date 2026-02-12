@@ -42,7 +42,7 @@ Panels:
 **File**: `monitoring/grafana/dashboards/data-pipeline.json`
 
 Panels:
-- SSI messages processed per second (by type: X-TRADE, X-Quote, R:ALL, MI)
+- SSI messages processed per second (by type: trade, quote, foreign, index, bar)
 - Trade classification latency histogram
 - Message processing errors
 - Batch writer throughput + latency
@@ -111,7 +111,7 @@ The backend exposes these Prometheus metrics at `GET /metrics`:
 
 | Metric | Labels | Description |
 |--------|--------|-------------|
-| `ssi_messages_total` | `type` | SSI messages processed (X-TRADE, X-Quote, R, MI) |
+| `ssi_messages_total` | `channel` | SSI messages processed (trade, quote, foreign, index, bar) |
 | `ws_messages_sent_total` | `channel` | WebSocket messages broadcast |
 | `trade_classifications_total` | `type` | Trades classified (buy/sell/neutral) |
 | `alerts_generated_total` | `type`, `severity` | Alerts triggered |

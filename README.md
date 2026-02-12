@@ -4,11 +4,12 @@ Real-time Vietnamese stock market tracker for VN30 stocks. Foreign investor moni
 
 ## Features
 
+- **Price Board** — real-time VN30 stocks with live pricing, sparklines, and active buy/sell classification
 - **Foreign Flow Tracking** — real-time foreign investor buy/sell with speed & acceleration metrics
 - **Volume Analysis** — active buy/sell/neutral trade classification per VN30 stock
-- **Signals** — market alerts for foreign acceleration, basis divergence, volume anomalies
-- **Derivatives Basis** — VN30F futures vs VN30 index spread analysis
-- **Real-time Data** — SSI FastConnect WebSocket for live market feeds
+- **Derivatives Basis** — VN30F futures vs VN30 index spread analysis with convergence tracking
+- **Analytics Alerts** — market alerts for volume spikes, price breakouts, foreign acceleration, basis divergence
+- **Real-time Data** — SSI FastConnect WebSocket for live market feeds with <5ms latency
 
 ## Tech Stack
 
@@ -20,6 +21,7 @@ Real-time Vietnamese stock market tracker for VN30 stocks. Foreign investor moni
 | Database | TimescaleDB (PostgreSQL 16) |
 | Cache | Redis 7 |
 | Data Source | SSI FastConnect (WebSocket + REST) |
+| Monitoring | Prometheus, Grafana, Node Exporter |
 | Deployment | Docker Compose |
 
 ## Prerequisites
@@ -80,17 +82,20 @@ npm run dev
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/health` | Health check |
+| GET | `/health` | Health check + database status |
 | GET | `/api/vn30-components` | VN30 component stock symbols |
 | GET | `/api/market/snapshot` | Full market data snapshot |
 | GET | `/api/market/foreign-detail` | Per-symbol foreign investor data |
 | GET | `/api/market/volume-stats` | Per-symbol active buy/sell stats |
+| GET | `/api/market/basis-trend` | Futures basis trend (30-min history) |
+| GET | `/api/market/alerts` | Alert history with filtering |
 | GET | `/api/history/{symbol}/candles` | 1-minute OHLCV candles |
 | GET | `/api/history/{symbol}/ticks` | Trade tick history |
 | GET | `/api/history/{symbol}/foreign` | Foreign flow snapshots |
 | GET | `/api/history/{symbol}/foreign/daily` | Daily foreign summary |
 | GET | `/api/history/index/{name}` | Index value history |
 | GET | `/api/history/derivatives/{contract}` | Futures history |
+| GET | `/metrics` | Prometheus metrics endpoint |
 
 ## Architecture
 
@@ -103,9 +108,16 @@ SSI FastConnect (WebSocket) ──→ FastAPI Backend ──→ React Frontend
                                  ├─ SessionAggregator
                                  ├─ ForeignInvestorTracker
                                  ├─ IndexTracker
-                                 └─ DerivativesTracker
+                                 ├─ DerivativesTracker
+                                 └─ AlertService + PriceTracker
                                       │
-                                 TimescaleDB
+                        ┌─────────────┼──────────────┐
+                        ▼             ▼              ▼
+                   TimescaleDB   Prometheus      Node Exporter
+                                  (metrics)       (system metrics)
+                                      │
+                                   Grafana
+                                (dashboards)
 ```
 
 ## Project Structure
@@ -119,28 +131,54 @@ stock-tracker/
 │   │   ├── models/              # Pydantic schemas
 │   │   ├── services/            # Business logic (11 services)
 │   │   ├── routers/             # REST endpoints
-│   │   └── database/            # DB layer (asyncpg + batch writer)
+│   │   ├── analytics/           # Alert + signal detection
+│   │   ├── websocket/           # WebSocket router
+│   │   ├── database/            # DB layer (pool.py)
+│   │   └── metrics.py           # Prometheus instrumentation
 │   ├── tests/
+│   ├── alembic/                 # Database migrations
+│   ├── scripts/                 # Utility scripts
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── pages/               # 3 dashboard pages
+│   │   ├── pages/               # 5 dashboard pages
 │   │   ├── components/          # UI components
 │   │   ├── hooks/               # Data fetching hooks
 │   │   └── utils/               # API client, formatters
 │   ├── nginx.conf
 │   └── Dockerfile
+├── monitoring/                  # Prometheus, Grafana configs
+├── scripts/                     # Deployment scripts (deploy.sh)
 ├── db/migrations/               # TimescaleDB schema
-└── docker-compose.yml
+└── docker-compose.prod.yml
 ```
 
 ## Testing
 
 ```bash
 cd backend
+# Run all tests (unit + integration)
 ./venv/bin/pytest -v
+
+# With coverage
+./venv/bin/pytest --cov=app --cov-fail-under=80
+
+# E2E tests only
+./venv/bin/pytest tests/e2e/ -v
+
+# Load testing
+./scripts/run-load-test.sh --users 100 --duration 300
 ```
+
+## WebSocket Channels
+
+| Channel | Purpose | Frequency |
+|---------|---------|-----------|
+| `/ws/market` | Full MarketSnapshot (quotes, indices, foreign, derivatives) | Per trade (500ms throttle) |
+| `/ws/foreign` | ForeignSummary only (aggregate + top movers) | Per foreign update (500ms throttle) |
+| `/ws/index` | VN30/VNINDEX data only | Per index update (500ms throttle) |
+| `/ws/alerts` | Real-time alert notifications | On alert generation |
 
 ## License
 

@@ -2,7 +2,7 @@
 
 ## Production Docker Deployment
 
-This guide covers deploying the VN Stock Tracker to production using Docker Compose with three containerized services: Nginx (reverse proxy), Backend (FastAPI), and Frontend (React).
+This guide covers deploying the VN Stock Tracker to production using Docker Compose with six to seven containerized services: Nginx (reverse proxy), Backend (FastAPI), Frontend (React), TimescaleDB, Prometheus, Grafana, and optionally Node Exporter (not available on macOS).
 
 ## Prerequisites
 
@@ -32,21 +32,21 @@ docker-compose -f docker-compose.prod.yml logs -f
 
 ## Architecture Overview
 
-The production deployment consists of three Docker containers on a shared bridge network:
+The production deployment consists of seven Docker containers on a shared bridge network:
 
 ```
-┌──────────────────────────────────────────┐
-│          Nginx (Reverse Proxy)           │
-│  Port 80 → Frontend / Backend / WS       │
-└──────────┬───────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│         Nginx (Reverse Proxy - Alpine)           │
+│  Port 80 → Frontend / Backend / WS / Monitoring  │
+└──────────┬─────────────────────────────────────────┘
            │ (app-network)
-      ┌────┴────────────────────┐
-      ▼                         ▼
-┌───────────┐           ┌──────────────┐
-│ Frontend  │           │ Backend      │
-│ (Static)  │           │ (FastAPI)    │
-│ :80       │           │ :8000        │
-└───────────┘           └──────────────┘
+      ┌────┴──────────────┬──────────────┬──────────────┬──────────────────┬─────────────────┐
+      ▼                   ▼              ▼              ▼                  ▼                 ▼
+┌───────────┐    ┌──────────────┐  ┌──────────┐  ┌──────────────┐  ┌───────────────┐  ┌─────────────────┐
+│ Frontend  │    │ Backend      │  │TimescaleDB   │ Prometheus   │  │ Grafana       │  │ Node Exporter   │
+│ (Static)  │    │ (FastAPI)    │  │(PostgreSQL)  │ (Metrics)    │  │ (Dashboards)  │  │ (System Stats)  │
+│ :80       │    │ :8000        │  │ :5432        │ :9090        │  │ :3000         │  │ :9100           │
+└───────────┘    └──────────────┘  └──────────────┘ └──────────────┘  └───────────────┘  └─────────────────┘
 ```
 
 ### Service Definitions
@@ -162,8 +162,8 @@ Create `.env` in project root with:
 # ============================================
 SSI_CONSUMER_ID=your_id_here
 SSI_CONSUMER_SECRET=your_secret_here
-SSI_BASE_URL=https://fc-data.ssi.com.vn/
-SSI_STREAM_URL=https://fc-data.ssi.com.vn/
+SSI_BASE_URL=https://fc-data.ssi.com.vn/          # REST API domain
+SSI_STREAM_URL=https://fc-datahub.ssi.com.vn/     # SignalR WebSocket domain (DIFFERENT!)
 
 # ============================================
 # Database (Phase 7)
@@ -336,6 +336,30 @@ docker-compose -f docker-compose.prod.yml exec backend curl -i \
   http://localhost:8000/ws/market
 ```
 
+### SSI Stream Connection Issues (502 Bad Gateway)
+
+**Symptom**: Backend logs show "502 Bad Gateway" or "Cannot connect to stream server"
+
+**Cause**: Incorrect SSI_STREAM_URL — must use `fc-datahub.ssi.com.vn` NOT `fc-data.ssi.com.vn`
+
+**Solution**:
+1. Verify `.env` has correct URL:
+   ```bash
+   SSI_STREAM_URL=https://fc-datahub.ssi.com.vn/
+   ```
+2. Restart backend after fixing:
+   ```bash
+   docker-compose -f docker-compose.prod.yml restart backend
+   ```
+3. Check logs for "SignalR connected":
+   ```bash
+   docker-compose -f docker-compose.prod.yml logs backend | grep -i "stream\|signalr"
+   ```
+
+**Note**: SSI uses TWO different domains:
+- REST API (`SSI_BASE_URL`): `https://fc-data.ssi.com.vn/`
+- WebSocket/SignalR (`SSI_STREAM_URL`): `https://fc-datahub.ssi.com.vn/`
+
 ### Frontend Shows Blank Page
 
 **Symptom**: Frontend loads but no content
@@ -428,6 +452,62 @@ deploy:
 - [ ] Resource limits tested under load
 - [ ] SSL/TLS configured (if using HTTPS)
 - [ ] Backup/restore procedures documented
+
+## Monitoring Stack
+
+### Accessing Monitoring Services
+
+**Prometheus** (Metrics Collection):
+- Direct: `http://localhost:9090/`
+- Via Nginx: Reverse proxy at `/prometheus/`
+- Scrape interval: 30s
+- Data retention: 30 days
+
+**Grafana** (Dashboards):
+- Direct: `http://localhost:3000/`
+- Default credentials: admin / (set in `.env` as `GRAFANA_PASSWORD`)
+- Auto-provisioned dashboards:
+  - Application Performance (request rates, latencies, errors)
+  - WebSocket Monitoring (connected clients, message throughput)
+  - Database Health (pool connections, query latency)
+  - System Metrics (CPU, memory, disk via Node Exporter)
+
+**Node Exporter** (System Metrics):
+- Endpoint: `http://localhost:9100/metrics`
+- Scraped by Prometheus every 30s
+- **Note**: Not available on macOS deployments (rslave mount not supported by Docker Desktop)
+
+### Metrics Endpoint
+
+Backend exposes Prometheus metrics:
+```bash
+curl http://localhost:8000/metrics
+```
+
+Metrics tracked:
+- HTTP request duration (histogram)
+- SSI message counters
+- WebSocket connection counts
+- Trade classifications
+- Alerts generated
+- Database writes
+
+### Deploy Script with Monitoring
+
+One-command deployment with preflight checks:
+```bash
+./scripts/deploy.sh
+```
+
+Features:
+- Verifies Docker and Docker Compose installation
+- Validates environment configuration
+- Checks for required credentials
+- Performs health checks post-deployment
+- Reports system resource status
+- Validates all 7 services are running
+
+---
 
 ## Load Testing
 
@@ -548,6 +628,7 @@ Check pipeline status:
 
 ## Further Reading
 
-- [System Architecture](./system-architecture.md) - Full deployment architecture diagram
+- [System Architecture](./system-architecture.md) - Full deployment architecture diagram + monitoring stack
 - [Codebase Summary](./codebase-summary.md) - File inventory and structure
+- [Monitoring Guide](./monitoring.md) - Grafana dashboards and metrics reference
 - [.env.example](./.env.example) - Full environment variable reference

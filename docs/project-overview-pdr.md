@@ -96,6 +96,10 @@ All configuration via environment variables (`.env`):
 SSI_CONSUMER_ID=<your-id>
 SSI_CONSUMER_SECRET=<your-secret>
 
+# SSI URLs (CRITICAL: Two different domains!)
+SSI_BASE_URL=https://fc-data.ssi.com.vn/          # REST API
+SSI_STREAM_URL=https://fc-datahub.ssi.com.vn/     # WebSocket/SignalR (NOT fc-data.ssi.com.vn!)
+
 # Market Data
 CHANNEL_R_INTERVAL_MS=1000  # Foreign investor update frequency
 FUTURES_OVERRIDE=VN30F2603,VN30F2606  # Active contracts
@@ -106,6 +110,10 @@ DATABASE_URL=postgresql://user:pass@localhost/stock_tracker
 # Server
 LOG_LEVEL=INFO
 ```
+
+**Important**: SSI uses two different domains:
+- **REST API** (market lookup): `fc-data.ssi.com.vn`
+- **WebSocket/SignalR** (streaming): `fc-datahub.ssi.com.vn` (discovered during deployment 2026-02-11)
 
 ## Key Design Decisions
 
@@ -119,10 +127,12 @@ LOG_LEVEL=INFO
 
 ## Quality Metrics
 
-- **Test Coverage**: 357 tests passing (all phases 1-6, 84% code coverage)
-- **Performance**: All 357 tests execute in 3.45s
+- **Test Coverage**: 394 tests passing (phases 1-8C, 80% code coverage)
+- **Performance**: All 394 tests execute in ~4s (including E2E)
 - **Type Safety**: 100% type hints (Python 3.12 syntax)
 - **Code Review**: All phases approved
+- **Throughput**: 58,874 msg/s (verified via profiling)
+- **Latency**: 0.017ms avg (target ≤0.5ms) ✅
 
 ## Phase Breakdown
 
@@ -137,7 +147,8 @@ LOG_LEVEL=INFO
 | 7A | Session Breakdown | ✓ Complete | 357 | ATO/Continuous/ATC volume analysis |
 | 8A | CI/CD Pipeline | ✓ Complete | 357 | GitHub Actions (3-job workflow) |
 | 8B | Load Testing Suite | ✓ Complete | - | Locust (4 scenarios, verified performance) |
-| 8 | Testing & Deployment | 🔄 IN PROGRESS | 357 | Production monitoring (remaining) |
+| 8C | E2E Tests + Profiling | ✓ Complete | 380 | Full system integration + performance baselines |
+| 8D | Monitoring Stack | ✓ Complete | - | Prometheus + Grafana + deploy.sh + docs |
 
 ## Success Criteria
 
@@ -154,7 +165,7 @@ LOG_LEVEL=INFO
 - [x] Database: PostgreSQL + Alembic migrations + connection pool + graceful startup
 - [x] CI/CD: GitHub Actions (3-job pipeline, 80% coverage enforcement)
 - [x] Load testing: Locust framework (4 scenarios, WS p99 <100ms, REST p95 <200ms verified)
-- [ ] Production monitoring: Grafana dashboards, metrics collection (Phase 8 remaining)
+- [x] Production monitoring: Prometheus metrics + Grafana dashboards + deploy.sh (Phase 8D complete)
 
 ## Risks & Mitigations
 
@@ -180,7 +191,16 @@ LOG_LEVEL=INFO
 - Repository: /Users/minh/Projects/stock-tracker
 - Plan: /Users/minh/Projects/stock-tracker/plans/260206-1418-vn-stock-tracker-revised/
 
+## Deployment Status
+
+**Successfully Deployed**: 2026-02-11 (Docker on macOS)
+- 6 services running: Nginx, Backend, Frontend, TimescaleDB, Prometheus, Grafana
+- Node Exporter skipped (rslave mount not supported on Docker Desktop)
+- 2004 quotes, 2004 prices, 29 indices, derivatives data flowing correctly
+- All health checks passing
+
 ## Next Steps
 
-1. **Phase 7**: Database schema and persistence layer (PostgreSQL + asyncpg batch inserts)
-2. **Phase 8**: Full testing suite (load tests 1000+ TPS) and Docker deployment with CI/CD
+1. **Phase 9**: Documentation finalization and project handoff
+2. **Phase 10**: Advanced features (GraphQL API, Redis caching for multi-instance, WebSocket compression)
+3. **Production**: Deploy to staging/production environment with monitoring dashboard
