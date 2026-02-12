@@ -12,7 +12,8 @@
 8. [WebSocket Real-time](#8-websocket-real-time)
 9. [Giám sát hệ thống (Monitoring)](#9-giám-sát-hệ-thống-monitoring)
 10. [Xử lý sự cố](#10-xử-lý-sự-cố)
-11. [FAQ](#11-faq)
+11. [Hướng dẫn vận hành hàng ngày](#11-hướng-dẫn-vận-hành-hàng-ngày)
+12. [FAQ](#12-faq)
 
 ---
 
@@ -1052,7 +1053,102 @@ docker compose -f docker-compose.prod.yml exec timescaledb pg_isready -U stockus
 
 ---
 
-## 11. FAQ
+## 11. Hướng dẫn vận hành hàng ngày
+
+### 11.1. Khi nào mở web?
+
+Mở trình duyệt truy cập **http://localhost** trong giờ giao dịch để xem dữ liệu real-time:
+
+| Phiên | Giờ (VN) | Dữ liệu |
+|-------|---------|---------|
+| ATO | 9:00 - 9:15 | Khớp lệnh mở cửa |
+| Liên tục sáng | 9:15 - 11:30 | Real-time đầy đủ |
+| Nghỉ trưa | 11:30 - 13:00 | Dữ liệu đóng băng (phiên sáng) |
+| Liên tục chiều | 13:00 - 14:30 | Real-time đầy đủ |
+| ATC | 14:30 - 14:45 | Khớp lệnh đóng cửa |
+| PLO | 14:45 - 15:00 | Giao dịch thỏa thuận |
+
+**Ngoài giờ giao dịch**: Web vẫn truy cập được, hiển thị dữ liệu cuối phiên gần nhất. SSI WebSocket sẽ tự động thử kết nối lại (có thể trả 502 — đây là bình thường). Khi phiên giao dịch mới bắt đầu (9:00 sáng T2-T6), dữ liệu sẽ tự động chảy trở lại.
+
+### 11.2. Có cần bật webapp hàng ngày không?
+
+**Không.** Hệ thống chạy hoàn toàn tự động nhờ Docker `restart: unless-stopped`:
+
+- **Backend** tự khởi động cùng Docker, tự kết nối SSI khi có phiên giao dịch
+- **Nếu SSI mất kết nối** (lỗi mạng, SSI bảo trì, ngoài giờ giao dịch) → backend tự reconnect với backoff tăng dần (2s → 4s → 8s → ... → 60s max), khi SSI sẵn sàng sẽ tự kết nối lại
+- **Dữ liệu phiên reset tự động** lúc 15:05 hàng ngày (sau khi thị trường đóng cửa)
+- **Nếu máy tính khởi động lại** → Docker tự start lại tất cả container
+
+Bạn chỉ cần can thiệp thủ công khi:
+- Thay đổi cấu hình (`.env`) → cần restart: `docker compose up -d backend`
+- Cập nhật code mới → cần rebuild: `docker compose build backend && docker compose up -d backend`
+- Kiểm tra sự cố → xem log: `docker logs stock-tracker-backend-1 --tail 50`
+
+### 11.3. Dữ liệu có được lưu trữ không? Lưu ở đâu?
+
+**Có.** Hệ thống lưu trữ 2 lớp:
+
+#### Lớp 1: Bộ nhớ (RAM) — Dữ liệu phiên hiện tại
+
+Dữ liệu real-time trong phiên giao dịch được giữ trong RAM:
+- Bảng giá, bid/ask, sparkline
+- Tổng hợp mua/bán chủ động
+- Dòng tiền NDTNN (tốc độ, gia tốc)
+- Basis phái sinh, cảnh báo
+
+**Reset tự động** lúc 15:05 hàng ngày → sáng hôm sau bắt đầu từ 0.
+
+#### Lớp 2: TimescaleDB — Dữ liệu lịch sử (lưu vĩnh viễn)
+
+Dữ liệu được ghi tự động vào database TimescaleDB (PostgreSQL), lưu trên ổ đĩa máy tính qua Docker volume:
+
+| Bảng | Dữ liệu | Mục đích |
+|------|---------|---------|
+| `tick_data` | Từng giao dịch (giá, khối lượng, mua/bán chủ động) | Tra cứu chi tiết |
+| `candles_1m` | Nến 1 phút (OHLCV + mua/bán chủ động) | Biểu đồ kỹ thuật |
+| `foreign_flow` | Snapshot NDTNN từng mã | Phân tích dòng vốn ngoại |
+| `index_snapshots` | Giá trị VN30/VNINDEX | Theo dõi chỉ số |
+| `derivatives` | VN30F giá + basis + open interest | Phân tích phái sinh |
+
+**Vị trí lưu trữ trên máy**: Docker volume `stock-tracker_pgdata`
+
+```bash
+# Xem vị trí volume trên ổ đĩa
+docker volume inspect stock-tracker_pgdata
+
+# Xem dung lượng database
+docker exec stock-tracker-timescaledb-1 psql -U stock -d stock_tracker \
+  -c "SELECT hypertable_name, pg_size_pretty(hypertable_size(format('%I', hypertable_name)::regclass)) FROM timescaledb_information.hypertables;"
+```
+
+**Truy cập dữ liệu lịch sử** qua API:
+```bash
+# Nến 1 phút VNM, 100 cây gần nhất
+curl http://localhost/api/history/VNM/candles?interval=1m&limit=100
+
+# Giao dịch chi tiết VNM
+curl http://localhost/api/history/VNM/ticks?limit=500
+
+# NDTNN VNM 5 ngày
+curl http://localhost/api/history/VNM/foreign?days=5
+
+# Tổng hợp NDTNN theo ngày
+curl http://localhost/api/history/VNM/foreign/daily
+```
+
+#### Lưu ý quan trọng về dữ liệu
+
+- **Dữ liệu chỉ ghi khi backend đang chạy** — nếu backend tắt trong giờ giao dịch, phần dữ liệu đó sẽ bị mất
+- **Xóa volume = mất toàn bộ lịch sử**: Lệnh `docker compose down -v` sẽ xóa volume. Chỉ dùng `docker compose down` (không có `-v`) khi dừng hệ thống
+- **Backup**: Copy Docker volume hoặc dùng `pg_dump`:
+  ```bash
+  docker exec stock-tracker-timescaledb-1 pg_dump -U stock stock_tracker > backup.sql
+  ```
+- **Không có database cũng chạy được**: Nếu TimescaleDB không khởi động, backend vẫn hoạt động bình thường với dữ liệu real-time (chỉ mất lịch sử)
+
+---
+
+## 12. FAQ
 
 **Q: Lấy SSI Consumer ID và Secret ở đâu?**
 A: Đăng ký tài khoản SSI iBoard tại website SSI, sau đó đăng ký sử dụng FastConnect API.
@@ -1061,10 +1157,13 @@ A: Đăng ký tài khoản SSI iBoard tại website SSI, sau đó đăng ký s�
 A: Hiện tại tập trung vào VN30 (30 mã). Schema hỗ trợ mở rộng tới 500+ mã.
 
 **Q: Dữ liệu có lưu lịch sử không?**
-A: Có. TimescaleDB lưu trades, foreign snapshots, index snapshots, basis points và alerts. Truy cập qua `/api/history/*` endpoints.
+A: Có. TimescaleDB lưu trades, foreign snapshots, index snapshots, basis points. Dữ liệu lưu vĩnh viễn trên Docker volume `stock-tracker_pgdata` (trừ khi bạn xóa volume). Truy cập qua `/api/history/*` endpoints. Xem chi tiết tại [Mục 11.3](#113-dữ-liệu-có-được-lưu-trữ-không-lưu-ở-đâu).
+
+**Q: Có cần bật web hàng ngày không?**
+A: Không. Hệ thống chạy tự động 24/7 nhờ Docker. Backend tự kết nối SSI khi có phiên giao dịch, tự reconnect khi mất kết nối. Bạn chỉ cần mở trình duyệt khi muốn xem dữ liệu. Xem chi tiết tại [Mục 11.2](#112-có-cần-bật-webapp-hàng-ngày-không).
 
 **Q: Có thể dùng ngoài giờ giao dịch không?**
-A: Có, nhưng dữ liệu sẽ là dữ liệu cuối phiên. Hệ thống reset lúc 15:05 hàng ngày.
+A: Có, nhưng dữ liệu sẽ là dữ liệu cuối phiên. Dữ liệu RAM reset lúc 15:05 hàng ngày, dữ liệu lịch sử trong TimescaleDB được giữ lại.
 
 **Q: Giờ giao dịch sàn HOSE?**
 A:
