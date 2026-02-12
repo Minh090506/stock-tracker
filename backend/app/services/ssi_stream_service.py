@@ -25,7 +25,10 @@ MessageCallback = Callable  # async (msg) -> None
 
 
 class SSIStreamService:
-    """Manages SSI WebSocket connection, message demux, and reconnect."""
+    """Manages SSI WebSocket connection, message demux, and auto-reconnect."""
+
+    _BASE_RECONNECT_DELAY = 2.0  # seconds
+    _MAX_RECONNECT_DELAY = 60.0  # cap for exponential backoff
 
     def __init__(self, auth_service, market_service):
         self._auth = auth_service
@@ -33,6 +36,9 @@ class SSIStreamService:
         self._stream: MarketDataStream | None = None
         self._stream_task: asyncio.Task | None = None
         self._reconnecting = False
+        self._shutting_down = False
+        self._channels: list[str] = []
+        self._reconnect_task: asyncio.Task | None = None
         # Callback registry keyed by RType
         self._callbacks: dict[str, list[MessageCallback]] = {
             "Trade": [],
@@ -90,6 +96,7 @@ class SSIStreamService:
         """
         # Capture the running event loop for cross-thread callback dispatch
         self._loop = asyncio.get_running_loop()
+        self._channels = channels
         config = self._auth.config
         self._stream = MarketDataStream(config, MarketDataClient(config))
         channel_str = ",".join(channels)
@@ -107,8 +114,12 @@ class SSIStreamService:
         self._stream_task.add_done_callback(self._on_stream_done)
 
     async def disconnect(self):
-        """Graceful shutdown — cancel stream task."""
+        """Graceful shutdown — cancel stream task and stop auto-reconnect."""
+        self._shutting_down = True
         logger.info("Disconnecting SSI stream...")
+        # Cancel pending reconnect attempt
+        if self._reconnect_task and not self._reconnect_task.done():
+            self._reconnect_task.cancel()
         if self._stream_task and not self._stream_task.done():
             self._stream_task.cancel()
             try:
@@ -194,7 +205,7 @@ class SSIStreamService:
         return self._reconnecting
 
     def _on_stream_done(self, task: asyncio.Task):
-        """Handle stream task completion (disconnect or crash)."""
+        """Handle stream task completion — notify downstream and auto-reconnect."""
         self._background_tasks.discard(task)
         if task.cancelled():
             logger.info("SSI stream task cancelled")
@@ -202,9 +213,49 @@ class SSIStreamService:
         exc = task.exception()
         if exc:
             logger.error("SSI stream task crashed: %s", exc, exc_info=exc)
+        else:
+            logger.warning("SSI stream task ended unexpectedly without error")
         # Notify downstream of disconnection
         if self._disconnect_callback:
             try:
                 self._disconnect_callback()
             except Exception:
                 logger.exception("Disconnect callback error")
+        # Schedule auto-reconnect (unless shutting down or already reconnecting)
+        if self._shutting_down or not self._loop:
+            return
+        if self._reconnect_task and not self._reconnect_task.done():
+            logger.info("Auto-reconnect already in progress — skipping duplicate")
+            return
+        self._reconnect_task = self._loop.create_task(self._auto_reconnect())
+
+    async def _auto_reconnect(self):
+        """Re-authenticate and reconnect SSI stream with exponential backoff.
+
+        Waits briefly after connect() to verify stream stability before
+        declaring success. If stream crashes immediately, backoff increases.
+        """
+        delay = self._BASE_RECONNECT_DELAY
+        attempt = 0
+        while not self._shutting_down:
+            attempt += 1
+            logger.warning("SSI auto-reconnect attempt %d in %.0fs...", attempt, delay)
+            await asyncio.sleep(delay)
+            if self._shutting_down:
+                return
+            try:
+                # Re-authenticate (JWT token may have expired)
+                await self._auth.authenticate()
+                # Reconnect stream with same channels
+                await self.connect(self._channels)
+                # Wait briefly to verify stream didn't crash immediately
+                await asyncio.sleep(3.0)
+                if self._stream_task and self._stream_task.done():
+                    raise RuntimeError("Stream crashed immediately after connect")
+                # Reconcile cumulative state from REST snapshot
+                await self.reconcile_after_reconnect()
+                logger.info("SSI auto-reconnect successful after %d attempt(s)", attempt)
+                return
+            except Exception:
+                logger.exception("SSI auto-reconnect attempt %d failed", attempt)
+                delay = min(delay * 2, self._MAX_RECONNECT_DELAY)
