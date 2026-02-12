@@ -122,6 +122,30 @@ export interface DerivativesHistory {
   open_interest: number;
 }
 
+// -- Candle data (1-minute OHLCV from continuous aggregate) --
+
+export interface CandleData {
+  symbol: string;
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  active_buy_vol: number;
+  active_sell_vol: number;
+}
+
+export interface IndexCandleData {
+  index_name: string;
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
 // -- Unified snapshot --
 
 export interface MarketSnapshot {

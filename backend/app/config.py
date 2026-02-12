@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     # Futures contract override (e.g., "VN30F2603" to force specific contract)
     futures_override: str = ""
 
+    # Extra symbols to track beyond VN30 basket (comma-separated, e.g. "DGC,KDH")
+    extra_symbols: str = ""
+
+    @property
+    def extra_symbols_list(self) -> list[str]:
+        return [s.strip().upper() for s in self.extra_symbols.split(",") if s.strip()]
+
     # WebSocket broadcast
     ws_broadcast_interval: float = 1.0    # seconds between broadcasts (legacy)
     ws_throttle_interval_ms: int = 500    # per-channel throttle for event-driven publisher

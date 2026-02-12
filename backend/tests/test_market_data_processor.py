@@ -29,19 +29,21 @@ class TestHandleTrade:
     async def test_classifies_and_aggregates(self, proc):
         await proc.handle_quote(SSIQuoteMessage(symbol="VNM", bid_price_1=80.0, ask_price_1=80.5))
         trade = SSITradeMessage(symbol="VNM", last_price=80.5, last_vol=100, trading_session="LO")
-        classified, stats = await proc.handle_trade(trade)
+        classified, stats, bp = await proc.handle_trade(trade)
         assert classified.trade_type == TradeType.MUA_CHU_DONG
         assert stats.mua_chu_dong_volume == 100
+        assert bp is None
 
     @pytest.mark.asyncio
     async def test_routes_futures_to_derivatives_tracker(self, proc):
-        """VN30F trades go to DerivativesTracker, not trade classifier."""
+        """VN30F trades go to DerivativesTracker AND are classified for persistence."""
         # Seed VN30 index so basis can be computed
         await proc.handle_index(SSIIndexMessage(index_id="VN30", index_value=1250.0))
         trade = SSITradeMessage(symbol="VN30F2603", last_price=1260.0, last_vol=10)
-        classified, stats = await proc.handle_trade(trade)
-        assert classified is None
+        classified, stats, bp = await proc.handle_trade(trade)
+        assert classified is not None  # now classified for tick_data persistence
         assert stats is None
+        assert bp is not None  # basis point computed
         # Verify derivatives tracker received the trade
         data = proc.derivatives_tracker.get_data()
         assert data is not None

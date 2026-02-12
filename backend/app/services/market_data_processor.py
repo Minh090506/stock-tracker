@@ -51,26 +51,50 @@ class MarketDataProcessor:
         self._price_cache: dict[str, tuple[float, float, float]] = {}
         # Optional price tracker for alert generation (set externally)
         self.price_tracker = None
+        # Watchlist: only process symbols in this set (empty = process all)
+        self._watchlist: set[str] = set()
+
+    # -- Watchlist --
+
+    def set_watchlist(self, symbols: set[str]):
+        """Set allowed symbols. Empty set = process all (no filter)."""
+        self._watchlist = symbols
+        logger.info("Watchlist set: %d symbols", len(symbols))
+
+    def _is_watched(self, symbol: str) -> bool:
+        """Check if symbol is in watchlist. VN30F* always allowed for derivatives."""
+        if not self._watchlist:
+            return True  # no filter
+        if symbol.startswith("VN30F"):
+            return True  # futures always tracked
+        return symbol in self._watchlist
 
     # -- Stream callbacks --
 
     async def handle_quote(self, msg: SSIQuoteMessage):
         """Cache latest quote for bid/ask lookup by trade classifier."""
+        if not self._is_watched(msg.symbol):
+            return
         self.quote_cache.update(msg)
         self._notify("market")
 
     async def handle_trade(self, msg: SSITradeMessage):
         """Classify trade and accumulate session stats.
 
-        Routes VN30F trades to DerivativesTracker.
-        Returns (ClassifiedTrade, SessionStats) or (None, None) for futures.
+        Routes VN30F trades to DerivativesTracker AND classifies for persistence.
+        Returns (ClassifiedTrade, SessionStats | None, BasisPoint | None).
         """
+        if not self._is_watched(msg.symbol):
+            return None, None, None
+
         if msg.symbol.startswith("VN30F"):
             bp = self.derivatives_tracker.update_from_trade(msg)
             if bp and self.price_tracker:
                 self.price_tracker.on_basis_update()
+            # Also classify for tick_data persistence (candle generation)
+            classified = self.classifier.classify(msg)
             self._notify("market")
-            return None, None
+            return classified, None, bp
 
         # Cache latest price data from trade
         self._price_cache[msg.symbol] = (
@@ -82,10 +106,12 @@ class MarketDataProcessor:
         if self.price_tracker:
             self.price_tracker.on_trade(msg.symbol, msg.last_price, msg.last_vol)
         self._notify("market")
-        return classified, stats
+        return classified, stats, None
 
     async def handle_foreign(self, msg: SSIForeignMessage):
         """Track foreign investor delta, speed, and acceleration."""
+        if not self._is_watched(msg.symbol):
+            return None
         result = self.foreign_tracker.update(msg)
         if self.price_tracker:
             self.price_tracker.on_foreign(msg.symbol)

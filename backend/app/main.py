@@ -97,8 +97,12 @@ async def lifespan(app: FastAPI):
     # 3. Authenticate with SSI
     await auth_service.authenticate()
 
-    # 4. Fetch VN30 component stocks
+    # 4. Fetch VN30 component stocks and configure watchlist
     vn30_symbols = await market_service.fetch_vn30_components()
+    watchlist = set(vn30_symbols) | {"VN30", "VNINDEX"}
+    if settings.extra_symbols_list:
+        watchlist |= set(settings.extra_symbols_list)
+    processor.set_watchlist(watchlist)
 
     # 5. Build channel list and connect stream
     futures_symbols = get_futures_symbols()
@@ -111,11 +115,32 @@ async def lifespan(app: FastAPI):
         "MI:ALL",
         "B:ALL",
     ]
-    # 6. Register data processing callbacks
+
+    # 6. Register data processing callbacks with persistence wiring
+    async def _on_trade(msg):
+        result = await processor.handle_trade(msg)
+        if result is None:
+            return
+        classified, _stats, basis_point = result
+        if db_available and classified:
+            batch_writer.enqueue_tick(classified)
+        if db_available and basis_point:
+            batch_writer.enqueue_basis(basis_point)
+
+    async def _on_foreign(msg):
+        result = await processor.handle_foreign(msg)
+        if db_available and result:
+            batch_writer.enqueue_foreign(result)
+
+    async def _on_index(msg):
+        result = await processor.handle_index(msg)
+        if db_available and result:
+            batch_writer.enqueue_index(result)
+
     stream_service.on_quote(processor.handle_quote)
-    stream_service.on_trade(processor.handle_trade)
-    stream_service.on_foreign(processor.handle_foreign)
-    stream_service.on_index(processor.handle_index)
+    stream_service.on_trade(_on_trade)
+    stream_service.on_foreign(_on_foreign)
+    stream_service.on_index(_on_index)
 
     logger.info("Subscribing channels: %s", channels)
     await stream_service.connect(channels)

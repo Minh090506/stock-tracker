@@ -72,6 +72,17 @@ async def get_index_history(
     return await _get_svc(request).get_index_history(index_name.upper(), start, end)
 
 
+@router.get("/index/{index_name}/candles")
+async def get_index_candles(
+    request: Request,
+    index_name: str,
+    start: date = Query(..., description="Start date (YYYY-MM-DD)"),
+    end: date = Query(..., description="End date (YYYY-MM-DD)"),
+):
+    """1-minute OHLCV candles for an index (from continuous aggregate)."""
+    return await _get_svc(request).get_index_candles(index_name.upper(), start, end)
+
+
 @router.get("/derivatives/{contract}")
 async def get_derivatives_history(
     request: Request,

@@ -10,6 +10,7 @@ interface AppSidebarNavigationProps {
 
 const NAV_ITEMS = [
   { to: "/price-board", label: "Price Board" },
+  { to: "/charts", label: "Charts" },
   { to: "/foreign-flow", label: "Foreign Flow" },
   { to: "/volume", label: "Volume Analysis" },
   { to: "/derivatives", label: "Derivatives" },

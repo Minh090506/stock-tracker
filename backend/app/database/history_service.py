@@ -1,6 +1,6 @@
 """Query service for persisted market data (candles, foreign flow, etc.)."""
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import asyncpg
 
@@ -34,12 +34,12 @@ class HistoryService:
             FROM candles_1m
             WHERE symbol = $1
               AND timestamp >= $2
-              AND timestamp < $3 + INTERVAL '1 day'
+              AND timestamp < $3
             ORDER BY timestamp
             """,
             symbol,
             datetime(start.year, start.month, start.day),
-            datetime(end.year, end.month, end.day),
+            datetime(end.year, end.month, end.day) + timedelta(days=1),
         )
         return [dict(r) for r in rows]
 
@@ -59,12 +59,12 @@ class HistoryService:
             FROM foreign_flow
             WHERE symbol = $1
               AND timestamp >= $2
-              AND timestamp < $3 + INTERVAL '1 day'
+              AND timestamp < $3
             ORDER BY timestamp
             """,
             symbol,
             datetime(start.year, start.month, start.day),
-            datetime(end.year, end.month, end.day),
+            datetime(end.year, end.month, end.day) + timedelta(days=1),
         )
         return [dict(r) for r in rows]
 
@@ -93,6 +93,30 @@ class HistoryService:
         )
         return [dict(r) for r in rows]
 
+    # -- Index candles ---------------------------------------------------------
+
+    async def get_index_candles(
+        self,
+        index_name: str,
+        start: date,
+        end: date,
+    ) -> list[dict]:
+        """Return 1-minute candles for index from continuous aggregate."""
+        rows = await self._pool.fetch(
+            """
+            SELECT index_name, timestamp, open, high, low, close, volume
+            FROM index_candles_1m
+            WHERE index_name = $1
+              AND timestamp >= $2
+              AND timestamp < $3
+            ORDER BY timestamp
+            """,
+            index_name,
+            datetime(start.year, start.month, start.day),
+            datetime(end.year, end.month, end.day) + timedelta(days=1),
+        )
+        return [dict(r) for r in rows]
+
     # -- Tick data -------------------------------------------------------------
 
     async def get_ticks(
@@ -109,13 +133,13 @@ class HistoryService:
             FROM tick_data
             WHERE symbol = $1
               AND timestamp >= $2
-              AND timestamp < $3 + INTERVAL '1 day'
+              AND timestamp < $3
             ORDER BY timestamp
             LIMIT $4
             """,
             symbol,
             datetime(start.year, start.month, start.day),
-            datetime(end.year, end.month, end.day),
+            datetime(end.year, end.month, end.day) + timedelta(days=1),
             limit,
         )
         return [dict(r) for r in rows]
@@ -135,12 +159,12 @@ class HistoryService:
             FROM index_snapshots
             WHERE index_name = $1
               AND timestamp >= $2
-              AND timestamp < $3 + INTERVAL '1 day'
+              AND timestamp < $3
             ORDER BY timestamp
             """,
             index_name,
             datetime(start.year, start.month, start.day),
-            datetime(end.year, end.month, end.day),
+            datetime(end.year, end.month, end.day) + timedelta(days=1),
         )
         return [dict(r) for r in rows]
 
@@ -159,11 +183,11 @@ class HistoryService:
             FROM derivatives
             WHERE contract = $1
               AND timestamp >= $2
-              AND timestamp < $3 + INTERVAL '1 day'
+              AND timestamp < $3
             ORDER BY timestamp
             """,
             contract,
             datetime(start.year, start.month, start.day),
-            datetime(end.year, end.month, end.day),
+            datetime(end.year, end.month, end.day) + timedelta(days=1),
         )
         return [dict(r) for r in rows]
