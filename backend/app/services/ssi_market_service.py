@@ -8,6 +8,8 @@ import asyncio
 import logging
 
 from ssi_fc_data.fc_md_client import MarketDataClient
+from ssi_fc_data.model.model import index_components as IndexComponentsReq
+from ssi_fc_data.model.model import securities as SecuritiesReq
 
 from app.config import settings
 
@@ -29,11 +31,12 @@ class SSIMarketService:
         """
         logger.info("Fetching VN30 component stocks...")
         try:
+            req = IndexComponentsReq(indexCode="VN30", pageSize=50, pageIndex=1)
             result = await asyncio.wait_for(
                 asyncio.to_thread(
                     self._client.index_components,
                     self._config,
-                    {"indexCode": "VN30", "pageSize": 50, "pageIndex": 1},
+                    req,
                 ),
                 timeout=15.0,
             )
@@ -51,11 +54,12 @@ class SSIMarketService:
         """
         logger.info("Fetching securities snapshot for reconciliation...")
         try:
+            req = SecuritiesReq(market="HOSE", pageSize=100, pageIndex=1)
             result = await asyncio.wait_for(
                 asyncio.to_thread(
                     self._client.securities,
                     self._config,
-                    {"market": "HOSE", "pageSize": 100, "pageIndex": 1},
+                    req,
                 ),
                 timeout=15.0,
             )

@@ -102,13 +102,13 @@ async def lifespan(app: FastAPI):
 
     # 5. Build channel list and connect stream
     futures_symbols = get_futures_symbols()
+    # SSI FastConnect valid channels: F (status), X (market data),
+    # R (foreign room), MI (index), B (bar/OHLC).
+    # Each channel type can only be subscribed ONCE.
     channels = [
-        "X-TRADE:ALL",
-        "X-Quote:ALL",
+        "X:ALL",
         "R:ALL",
-        "MI:VN30",
-        "MI:VNINDEX",
-        *[f"X:{fs}" for fs in futures_symbols],
+        "MI:ALL",
         "B:ALL",
     ]
     # 6. Register data processing callbacks

@@ -13,7 +13,7 @@ from ssi_fc_data.fc_md_client import MarketDataClient
 from ssi_fc_data.fc_md_stream import MarketDataStream
 
 from app.metrics import ssi_messages_received_total
-from app.services.ssi_field_normalizer import extract_content, parse_message
+from app.services.ssi_field_normalizer import extract_content, parse_message_multi
 
 logger = logging.getLogger(__name__)
 
@@ -128,18 +128,17 @@ class SSIStreamService:
         """Demux raw SSI message by RType and dispatch to callbacks.
 
         Called from the stream thread — schedules async callbacks on the event loop.
+        X:ALL channel sends combined trade+quote data as RType="X",
+        which parse_message_multi splits into separate Trade and Quote results.
         """
         content = extract_content(raw)
         if content is None:
             return
-        result = parse_message(content)
-        if result is None:
-            return
-        rtype, msg = result
-        ssi_messages_received_total.labels(channel=_RTYPE_LABEL.get(rtype, rtype)).inc()
-        callbacks = self._callbacks.get(rtype, [])
-        for cb in callbacks:
-            self._schedule_callback(cb, msg)
+        for rtype, msg in parse_message_multi(content):
+            ssi_messages_received_total.labels(channel=_RTYPE_LABEL.get(rtype, rtype)).inc()
+            callbacks = self._callbacks.get(rtype, [])
+            for cb in callbacks:
+                self._schedule_callback(cb, msg)
 
     def _handle_error(self, error):
         """Log stream error. ssi-fc-data may auto-reconnect internally."""

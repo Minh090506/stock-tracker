@@ -6,23 +6,29 @@ Token is stored in-memory for stream authentication.
 
 import asyncio
 import logging
+from types import SimpleNamespace
 
 from ssi_fc_data.fc_md_client import MarketDataClient
+from ssi_fc_data.model.model import accessToken as SSIAccessTokenRequest
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _build_config() -> dict:
-    """Build ssi-fc-data config dict from app settings."""
-    return {
-        "auth_type": "Bearer",
-        "consumerID": settings.ssi_consumer_id,
-        "consumerSecret": settings.ssi_consumer_secret,
-        "url": settings.ssi_base_url,
-        "stream_url": settings.ssi_stream_url,
-    }
+def _build_config() -> SimpleNamespace:
+    """Build ssi-fc-data config object from app settings.
+
+    ssi-fc-data v2.2.2 expects attribute access (config.consumerID),
+    not dict access (config["consumerID"]).
+    """
+    return SimpleNamespace(
+        auth_type="Bearer",
+        consumerID=settings.ssi_consumer_id,
+        consumerSecret=settings.ssi_consumer_secret,
+        url=settings.ssi_base_url,
+        stream_url=settings.ssi_stream_url,
+    )
 
 
 class SSIAuthService:
@@ -48,8 +54,12 @@ class SSIAuthService:
         Returns the access token string.
         """
         logger.info("Authenticating with SSI FastConnect...")
+        req = SSIAccessTokenRequest(
+            consumerID=settings.ssi_consumer_id,
+            consumerSecret=settings.ssi_consumer_secret,
+        )
         result = await asyncio.wait_for(
-            asyncio.to_thread(self.client.access_token, self.config),
+            asyncio.to_thread(self.client.access_token, req),
             timeout=15.0,
         )
         # result is typically {"data": {"accessToken": "..."}, "status": 200}

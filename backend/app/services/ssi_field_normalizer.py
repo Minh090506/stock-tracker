@@ -77,7 +77,11 @@ def normalize_fields(content: dict) -> dict:
 
 
 def extract_content(raw) -> dict | None:
-    """Extract the content dict from a raw SSI message."""
+    """Extract the content dict from a raw SSI message.
+
+    SSI may wrap payload in a "Content" key as a JSON string,
+    so we need to parse it recursively until we get a dict.
+    """
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -87,7 +91,14 @@ def extract_content(raw) -> dict | None:
     if not isinstance(raw, dict):
         return None
     # SSI wraps payload in "Content" or "content" key, or sends flat
-    return raw.get("Content") or raw.get("content") or raw
+    content = raw.get("Content") or raw.get("content") or raw
+    # Content may itself be a JSON string — parse it
+    if isinstance(content, str):
+        try:
+            content = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    return content if isinstance(content, dict) else None
 
 
 # RType→(model_class) routing table
@@ -113,3 +124,25 @@ def parse_message(content: dict) -> tuple[str, object] | None:
     except Exception:
         logger.debug("Failed to parse %s message", rtype, exc_info=True)
         return None
+
+
+def parse_message_multi(content: dict) -> list[tuple[str, object]]:
+    """Parse SSI content dict, returning multiple typed models for combined messages.
+
+    X:ALL channel sends RType="X" with both trade + quote fields in one message.
+    We split it into separate Trade and Quote results for downstream handlers.
+    """
+    rtype = content.get("RType", "")
+    if rtype == "X":
+        # Combined market data — extract as both Trade and Quote
+        results = []
+        fields = normalize_fields(content)
+        for mapped_rtype, model_cls in [("Trade", SSITradeMessage), ("Quote", SSIQuoteMessage)]:
+            try:
+                results.append((mapped_rtype, model_cls(**fields)))
+            except Exception:
+                logger.debug("Failed to parse X→%s message", mapped_rtype, exc_info=True)
+        return results
+    # Single-type message
+    result = parse_message(content)
+    return [result] if result else []
