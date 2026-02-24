@@ -25,6 +25,7 @@
 - **Dòng tiền NDTNN** — Theo dõi nhà đầu tư nước ngoài: tổng hợp, theo mã, theo ngành, top mua/bán
 - **Phân tích khối lượng** — Mua chủ động / Bán chủ động / Trung lập theo từng phiên ATO/Liên tục/ATC
 - **Phái sinh (Derivatives)** — Basis VN30F vs VN30, premium/discount, xu hướng hội tụ
+- **Phân tích vận tốc giao dịch (Velocity)** — Tốc độ khối lượng mua/bán VN30F vs rổ VN30, hệ số tương quan
 - **Cảnh báo (Signals)** — Volume spike, price breakout, foreign acceleration, basis divergence
 
 **Nguồn dữ liệu**: SSI FastConnect (WebSocket + REST) — duy nhất, không dùng vnstock hay TCBS.
@@ -372,7 +373,46 @@ Basis % = Basis / VN30 Index × 100
 
 4. **Open Interest** — Hiển thị thông tin open interest (nếu có từ SSI)
 
-### 5.5. Cảnh Báo (Signals)
+### 5.5. Phân Tích Vận Tốc Giao Dịch (Velocity Analysis)
+
+**Đường dẫn**: `/velocity-analysis`
+
+Trang theo dõi tốc độ khối lượng mua/bán theo thời gian thực, so sánh giữa VN30F (phái sinh) và rổ VN30 (spot) để phát hiện sự mất cân bằng tốc độ.
+
+**Thành phần giao diện**:
+
+1. **Thẻ Tóm Tắt (Summary Cards)**:
+   - **VN30F Buy/Sell Velocity** — Tốc độ mua/bán phái sinh (shares/phút)
+   - **VN30 Basket Velocity** — Tốc độ mua/bán rổ spot (shares/phút)
+   - **Net Velocity** — Vận tốc ròng (mua - bán)
+   - **Correlation** — Hệ số tương quan VN30F vs VN30 (0-1, cao = đồng bộ)
+
+2. **Biểu Đồ Giá Với Overlay Vận Tốc**:
+   - Đường giá VN30F/VN30 chính
+   - Vùng overlay: xanh = mua mạnh, đỏ = bán mạnh
+   - Độ đậm của màu = mức độ chênh lệch vận tốc
+
+3. **Gauge Mất Cân Bằng Vận Tốc**:
+   - Hiển thị ngacon (gauge) với giá trị -1 đến +1
+   - Âm (trái, đỏ) = VN30 bán nhanh hơn VN30F
+   - Dương (phải, xanh) = VN30F bán nhanh hơn VN30
+
+4. **Lịch Sử Vận Tốc**:
+   - Biểu đồ lịch sử 60 phút hoặc 24 giờ
+   - Hiển thị dữ liệu từ continuous aggregate `order_velocity_1m`
+   - Zoom/Pan để xem chi tiết các khoảng thời gian
+
+**Cách sử dụng**:
+
+| Tín hiệu | Ý nghĩa | Gợi ý |
+|----------|---------|--------|
+| Velocity VN30F >> VN30 (xanh đậm) | Phái sinh mua chủ động, dò đáy | Khả năng tăng giá cao |
+| Velocity VN30 >> VN30F (đỏ đậm) | Spot bán chủ động | Cảnh báo giảm giá |
+| Correlation gần 1.0 | VN30F và VN30 đồng bộ | Thị trường có hướng rõ ràng |
+| Correlation < 0.7 | Phái sinh và spot phân kỳ | Rủi ro imbalance, cơ hội arbitrage |
+| Mất cân bằng tăng đột ngột | Một bên đang "vượt trội" | Theo dõi breakout ngay sau |
+
+### 5.6. Cảnh Báo (Signals)
 
 **Đường dẫn**: `/signals`
 
@@ -404,7 +444,7 @@ Hệ thống cảnh báo analytics real-time với 4 loại tín hiệu:
 3. **Âm thanh** — Bật/tắt thông báo âm thanh cho cảnh báo CRITICAL
 4. **Dedup** — Mỗi cặp (loại, mã) chỉ cảnh báo 1 lần mỗi 60 giây (tránh spam)
 
-### 5.6. Trạng thái kết nối
+### 5.7. Trạng thái kết nối
 
 Trên mỗi trang, góc phải hiển thị trạng thái kết nối:
 
