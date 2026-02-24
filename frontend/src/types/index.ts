@@ -226,3 +226,60 @@ export interface Alert {
   timestamp: string;
   data: Record<string, unknown>;
 }
+
+// -- Backtest --
+
+export interface CrossCorrelationResult {
+  lag_minutes: number;
+  correlation: number;
+  sample_size: number;
+}
+
+export interface CrossCorrelationReport {
+  symbol: string;
+  date_from: string;
+  date_to: string;
+  results: CrossCorrelationResult[];
+  optimal_lag: number;
+  optimal_correlation: number;
+}
+
+export interface ThresholdBin {
+  imbalance_min: number;
+  imbalance_max: number;
+  sample_count: number;
+  price_up_probability: number;
+  avg_price_change: number;
+  avg_magnitude: number;
+}
+
+export interface ThresholdReport {
+  symbol: string;
+  lookahead_minutes: number;
+  date_from: string;
+  date_to: string;
+  bins: ThresholdBin[];
+}
+
+export interface TimePatternEntry {
+  hour: number;
+  session_phase: string;
+  avg_correlation: number;
+  avg_imbalance: number;
+  sample_count: number;
+}
+
+export interface PatternReport {
+  symbol: string;
+  date_from: string;
+  date_to: string;
+  patterns: TimePatternEntry[];
+}
+
+export interface BacktestSummary {
+  computed_at: string;
+  data_days: number;
+  cross_correlation: CrossCorrelationReport;
+  threshold: ThresholdReport;
+  patterns: PatternReport;
+}

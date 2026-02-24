@@ -43,7 +43,7 @@ tick_data (hypertable)
 | 4 | [Frontend Dashboard](./phase-04-frontend-velocity-dashboard.md) | 5h | complete |
 | 5 | [Alert Signals](./phase-05-alert-velocity-signals.md) | 2h | complete |
 | 6 | [Backtest Engine](./phase-06-backtest-analysis-engine.md) | 4h | complete |
-| 7 | [Backtest Dashboard](./phase-07-frontend-backtest-dashboard.md) | 4h | pending |
+| 7 | [Backtest Dashboard](./phase-07-frontend-backtest-dashboard.md) | 4h | complete |
 
 ## Key Decisions
 

@@ -680,6 +680,52 @@ useForeignFlow() hook (102 LOC)
 - Sector chart: <50ms render with 10 sectors
 - Cumulative chart: <100ms render with 1440 points
 
+### Backtest Analysis Dashboard (Phase 7B - COMPLETE)
+
+**Backtest Dashboard Data Flow**:
+```
+React Component (BacktestPage)
+    ↓
+useBacktestData() hook (hybrid)
+    ├─ REST Polling /api/backtest/summary (1 request, cached)
+    │  └─ PrecomputedSummary (peak correlation, best threshold, etc)
+    │     └─ Summary cards + pattern chart
+    │
+    └─ Parallel on-demand endpoints (when user clicks "Analyze")
+       ├─ GET /api/backtest/correlation
+       ├─ GET /api/backtest/threshold
+       └─ GET /api/backtest/patterns
+          └─ Correlation chart + threshold table + pattern details
+```
+
+**Frontend Components** (Phase 7B):
+- `backtest-controls.tsx` — Symbol selector, date range picker, lag slider, analysis trigger
+- `backtest-summary-cards.tsx` — 4 KPI cards (peak r, best threshold, optimal lag, pattern strength)
+- `backtest-correlation-chart.tsx` — Lag vs Pearson correlation with optimal lag highlight
+- `backtest-threshold-table.tsx` — Imbalance bin analysis with P(price_up) metrics
+- `backtest-pattern-chart.tsx` — Hour-of-day heatmap with correlation and imbalance patterns
+- `backtest-skeleton.tsx` — Loading skeleton with shimmer
+- `backtest-page.tsx` — Page layout with multi-tab analysis view
+
+**Backend Analysis** (Phase 6B):
+- `GET /api/backtest/summary` — Pre-computed daily (cached, instant response)
+- `GET /api/backtest/correlation` — On-demand cross-correlation (lag detection)
+- `GET /api/backtest/threshold` — On-demand threshold discovery (probability bins)
+- `GET /api/backtest/patterns` — On-demand pattern recognition (hour-of-day + session phase)
+
+**Data Flow**:
+- Daily pre-compute at 15:30 VN runs all 3 analyses (20-day trailing window)
+- Results cached in `app.state.backtest_engine` for instant summary retrieval
+- User-triggered analysis hits endpoints in parallel for real-time custom analysis
+- All responses <500ms; typical total dashboard load <2s
+
+**Performance**:
+- Summary cards: <100ms (cached data)
+- Correlation chart: <500ms (on-demand)
+- Threshold table: <300ms (on-demand)
+- Pattern chart: <200ms (on-demand)
+- Parallel load: All 3 analyses complete within 1 second
+
 ### Velocity Analysis Dashboard (Phase 9 - COMPLETE)
 
 **Order Velocity Tracking Flow**:
