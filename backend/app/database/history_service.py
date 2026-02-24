@@ -168,6 +168,44 @@ class HistoryService:
         )
         return [dict(r) for r in rows]
 
+    # -- Velocity --------------------------------------------------------------
+
+    async def get_velocity_history(
+        self, symbol: str, minutes: int = 60
+    ) -> list[dict]:
+        """Per-symbol velocity from order_velocity_1m continuous aggregate."""
+        rows = await self._pool.fetch(
+            """
+            SELECT timestamp, symbol,
+                   buy_vol, sell_vol, buy_count, sell_count,
+                   buy_value, sell_value
+            FROM order_velocity_1m
+            WHERE symbol = $1
+              AND timestamp >= NOW() - make_interval(mins => $2)
+            ORDER BY timestamp
+            """,
+            symbol,
+            minutes,
+        )
+        return [dict(r) for r in rows]
+
+    async def get_basket_velocity_history(
+        self, minutes: int = 60
+    ) -> list[dict]:
+        """VN30 basket velocity from vn30_basket_velocity_1m view."""
+        rows = await self._pool.fetch(
+            """
+            SELECT timestamp,
+                   buy_vol, sell_vol, buy_count, sell_count,
+                   buy_value, sell_value
+            FROM vn30_basket_velocity_1m
+            WHERE timestamp >= NOW() - make_interval(mins => $1)
+            ORDER BY timestamp
+            """,
+            minutes,
+        )
+        return [dict(r) for r in rows]
+
     # -- Derivatives -----------------------------------------------------------
 
     async def get_derivatives_history(

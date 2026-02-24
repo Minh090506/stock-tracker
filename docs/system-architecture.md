@@ -361,6 +361,9 @@ WS_MAX_CONNECTIONS_PER_IP=5
 - `GET /api/market/foreign-detail` → ForeignSummary (aggregate + top movers)
 - `GET /api/market/volume-stats` → Volume breakdown by type
 - `GET /api/market/basis-trend?minutes=30` → BasisPoint[] (filtered history)
+- `GET /api/market/velocity` → VelocitySnapshot (VN30F + basket + correlation)
+- `GET /api/market/velocity/history?symbol={symbol}&minutes=60` → Per-symbol velocity history
+- `GET /api/market/velocity/basket-history?minutes=60` → VN30 basket velocity history
 
 ### Historical Data Endpoints (`history_router.py`)
 - `GET /api/history/{symbol}/candles?interval=1m&limit=100` → OHLC bars

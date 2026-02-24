@@ -168,6 +168,98 @@ Real-time alerts (filterable).
 ]
 ```
 
+#### `GET /api/market/velocity`
+
+Real-time order velocity snapshot for VN30F futures and VN30 basket with correlation metrics.
+
+**Response**:
+```json
+{
+  "vn30f": {
+    "symbol": "VN30F2603",
+    "buy_velocity": 1234.5,
+    "sell_velocity": 987.6,
+    "net_velocity": 246.9,
+    "buy_volume_1m": 5678900,
+    "sell_volume_1m": 4567800,
+    "correlation": 0.87,
+    "timestamp": "2026-02-11T10:15:00+07:00"
+  },
+  "basket": {
+    "buy_velocity": 9876.5,
+    "sell_velocity": 8765.4,
+    "net_velocity": 1111.1,
+    "correlation": 0.89,
+    "timestamp": "2026-02-11T10:15:00+07:00"
+  }
+}
+```
+
+#### `GET /api/market/velocity/history`
+
+Per-symbol historical order velocity from TimescaleDB `order_velocity_1m` continuous aggregate.
+
+**Query params**:
+| Param | Default | Description |
+|-------|---------|-------------|
+| `symbol` | *(required)* | Stock symbol (e.g. `VN30F2603`, `VPB`) |
+| `minutes` | `60` | Lookback window in minutes (1-480) |
+
+**Response**:
+```json
+[
+  {
+    "time": "2026-02-11T10:00:00+07:00",
+    "symbol": "VN30F2603",
+    "buy_velocity": 1200.0,
+    "sell_velocity": 950.0,
+    "net_velocity": 250.0,
+    "buy_volume": 5600000,
+    "sell_volume": 4500000,
+    "correlation": 0.85
+  },
+  {
+    "time": "2026-02-11T10:01:00+07:00",
+    "symbol": "VN30F2603",
+    "buy_velocity": 1300.0,
+    "sell_velocity": 980.0,
+    "net_velocity": 320.0,
+    "buy_volume": 5700000,
+    "sell_volume": 4600000,
+    "correlation": 0.87
+  }
+]
+```
+
+#### `GET /api/market/velocity/basket-history`
+
+VN30 basket historical velocity from TimescaleDB `vn30_basket_velocity_1m` view.
+
+**Query params**:
+| Param | Default | Description |
+|-------|---------|-------------|
+| `minutes` | `60` | Lookback window in minutes (1-480) |
+
+**Response**:
+```json
+[
+  {
+    "time": "2026-02-11T10:00:00+07:00",
+    "buy_velocity": 9800.0,
+    "sell_velocity": 8700.0,
+    "net_velocity": 1100.0,
+    "correlation": 0.88
+  },
+  {
+    "time": "2026-02-11T10:01:00+07:00",
+    "buy_velocity": 10100.0,
+    "sell_velocity": 8900.0,
+    "net_velocity": 1200.0,
+    "correlation": 0.89
+  }
+]
+```
+
 ---
 
 ### Historical Data

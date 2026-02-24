@@ -89,6 +89,9 @@ npm run dev
 | GET | `/api/market/volume-stats` | Per-symbol active buy/sell stats |
 | GET | `/api/market/basis-trend` | Futures basis trend (30-min history) |
 | GET | `/api/market/alerts` | Alert history with filtering |
+| GET | `/api/market/velocity` | Current velocity snapshot |
+| GET | `/api/market/velocity/history` | Per-symbol velocity history |
+| GET | `/api/market/velocity/basket-history` | VN30 basket velocity history |
 | GET | `/api/history/{symbol}/candles` | 1-minute OHLCV candles |
 | GET | `/api/history/{symbol}/ticks` | Trade tick history |
 | GET | `/api/history/{symbol}/foreign` | Foreign flow snapshots |

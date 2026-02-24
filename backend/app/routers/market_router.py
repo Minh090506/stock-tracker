@@ -3,11 +3,25 @@
 Exposes MarketDataProcessor in-memory state via REST for frontend polling.
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from app.analytics.alert_models import AlertSeverity, AlertType
+from app.database.history_service import HistoryService
+from app.database.pool import db
 
 router = APIRouter(prefix="/api/market", tags=["market"])
+
+# Lazily initialised — db pool available after lifespan startup
+_history_svc: HistoryService | None = None
+
+
+def _get_history_svc(request: Request) -> HistoryService:
+    global _history_svc
+    if not getattr(request.app.state, "db_available", False):
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    if _history_svc is None:
+        _history_svc = HistoryService(db)
+    return _history_svc
 
 
 @router.get("/snapshot")
@@ -57,3 +71,36 @@ async def get_alerts(
 
     alerts = alert_service.get_recent_alerts(limit, type, severity)
     return [a.model_dump() for a in alerts]
+
+
+# -- Velocity endpoints ----------------------------------------------------
+
+
+@router.get("/velocity")
+async def get_velocity():
+    """Current real-time velocity snapshot (VN30F + basket + correlation)."""
+    from app.main import processor
+
+    snapshot = processor.get_market_snapshot()
+    return snapshot.velocity
+
+
+@router.get("/velocity/history")
+async def get_velocity_history(
+    request: Request,
+    symbol: str = Query(..., min_length=1, max_length=20, description="Symbol (e.g., VN30F2603, VPB)"),
+    minutes: int = Query(60, ge=1, le=480),
+):
+    """Per-symbol historical velocity from order_velocity_1m aggregate."""
+    svc = _get_history_svc(request)
+    return await svc.get_velocity_history(symbol.upper(), minutes)
+
+
+@router.get("/velocity/basket-history")
+async def get_basket_velocity_history(
+    request: Request,
+    minutes: int = Query(60, ge=1, le=480),
+):
+    """VN30 basket historical velocity from vn30_basket_velocity_1m view."""
+    svc = _get_history_svc(request)
+    return await svc.get_basket_velocity_history(minutes)
