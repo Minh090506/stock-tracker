@@ -37,6 +37,11 @@ class DerivativesTracker:
         # Track which symbol is the active (nearest) contract
         self._active_symbol: str = ""
 
+    @property
+    def active_symbol(self) -> str:
+        """The most-traded VN30F contract symbol."""
+        return self._active_symbol
+
     def update_from_trade(self, trade: SSITradeMessage) -> BasisPoint | None:
         """Process a VN30F trade. Returns BasisPoint if computable."""
         symbol = trade.symbol

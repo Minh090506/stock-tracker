@@ -156,6 +156,37 @@ class DerivativesData(BaseModel):
     last_updated: datetime | None = None
 
 
+class CorrelationData(BaseModel):
+    """Rolling Pearson correlation result."""
+
+    coefficient: float = 0.0       # -1 to +1
+    sample_size: int = 0
+    window_minutes: int = 15
+    last_updated: datetime | None = None
+
+
+class VelocityData(BaseModel):
+    """Per-symbol velocity metrics for current rolling window."""
+
+    symbol: str
+    buy_vol_per_min: float = 0.0
+    sell_vol_per_min: float = 0.0
+    net_vol_per_min: float = 0.0
+    buy_count_per_min: float = 0.0
+    sell_count_per_min: float = 0.0
+    imbalance_ratio: float = 0.5   # buy/(buy+sell), 0.5 = neutral
+    acceleration: float = 0.0      # net velocity change rate
+    last_updated: datetime | None = None
+
+
+class VelocitySnapshot(BaseModel):
+    """Aggregate velocity for dashboard display."""
+
+    vn30f: VelocityData | None = None
+    basket: VelocityData | None = None
+    correlation: CorrelationData | None = None
+
+
 class MarketSnapshot(BaseModel):
     """Unified snapshot of all market data for API consumers."""
 
@@ -164,3 +195,4 @@ class MarketSnapshot(BaseModel):
     indices: dict[str, IndexData] = {}
     foreign: ForeignSummary | None = None
     derivatives: DerivativesData | None = None
+    velocity: VelocitySnapshot | None = None

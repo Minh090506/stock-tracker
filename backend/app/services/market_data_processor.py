@@ -14,6 +14,8 @@ from app.models.domain import (
     MarketSnapshot,
     PriceData,
     SessionStats,
+    TradeType,
+    VelocitySnapshot,
 )
 from app.models.ssi_messages import (
     SSIForeignMessage,
@@ -21,12 +23,14 @@ from app.models.ssi_messages import (
     SSIQuoteMessage,
     SSITradeMessage,
 )
+from app.services.correlation_engine import CorrelationEngine
 from app.services.derivatives_tracker import DerivativesTracker
 from app.services.foreign_investor_tracker import ForeignInvestorTracker
 from app.services.index_tracker import IndexTracker
 from app.services.quote_cache import QuoteCache
 from app.services.session_aggregator import SessionAggregator
 from app.services.trade_classifier import TradeClassifier
+from app.services.velocity_tracker import VelocityTracker
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +50,8 @@ class MarketDataProcessor:
         self.derivatives_tracker = DerivativesTracker(
             self.index_tracker, self.quote_cache
         )
+        self.velocity_tracker = VelocityTracker()
+        self.correlation_engine = CorrelationEngine()
         self._subscribers: list[SubscriberCallback] = []
         # Price cache: symbol -> (last_price, change, ratio_change)
         self._price_cache: dict[str, tuple[float, float, float]] = {}
@@ -93,6 +99,9 @@ class MarketDataProcessor:
                 self.price_tracker.on_basis_update()
             # Also classify for tick_data persistence (candle generation)
             classified = self.classifier.classify(msg)
+            # Feed velocity tracker
+            if classified:
+                self._feed_velocity(classified)
             self._notify("market")
             return classified, None, bp
 
@@ -103,6 +112,9 @@ class MarketDataProcessor:
 
         classified = self.classifier.classify(msg)
         stats = self.aggregator.add_trade(classified)
+        # Feed velocity tracker
+        if classified:
+            self._feed_velocity(classified)
         if self.price_tracker:
             self.price_tracker.on_trade(msg.symbol, msg.last_price, msg.last_vol)
         self._notify("market")
@@ -124,6 +136,27 @@ class MarketDataProcessor:
         self._notify("index")
         return result
 
+    # -- Velocity / Correlation --
+
+    def _feed_velocity(self, classified) -> None:
+        """Feed a classified trade into VelocityTracker and trigger correlation."""
+        if classified.trade_type == TradeType.NEUTRAL:
+            return  # no directional signal
+        is_buy = classified.trade_type == TradeType.MUA_CHU_DONG
+        self.velocity_tracker.on_trade(
+            classified.symbol, classified.volume, classified.value,
+            is_buy, classified.timestamp,
+        )
+        # Check if any symbol completed a minute — update correlation
+        if self.velocity_tracker.get_minute_rotated_symbols():
+            vn30f_vel = self.velocity_tracker.get_vn30f_velocity()
+            active = self.derivatives_tracker.active_symbol
+            vn30f_price = self.derivatives_tracker.get_futures_price(active) if active else 0.0
+            if vn30f_vel and vn30f_price > 0:
+                self.correlation_engine.on_minute_tick(
+                    vn30f_vel.net_vol_per_min, vn30f_price,
+                )
+
     # -- Unified API --
 
     def get_market_snapshot(self) -> MarketSnapshot:
@@ -140,12 +173,19 @@ class MarketDataProcessor:
                 floor=floor,
             )
 
+        velocity = VelocitySnapshot(
+            vn30f=self.velocity_tracker.get_vn30f_velocity(),
+            basket=self.velocity_tracker.get_basket_velocity(),
+            correlation=self.correlation_engine.get_correlation(),
+        )
+
         return MarketSnapshot(
             quotes=self.aggregator.get_all_stats(),
             prices=prices,
             indices=self.index_tracker.get_all(),
             foreign=self.foreign_tracker.get_summary(),
             derivatives=self.derivatives_tracker.get_data(),
+            velocity=velocity,
         )
 
     def get_foreign_summary(self) -> ForeignSummary:
@@ -186,6 +226,8 @@ class MarketDataProcessor:
         self.foreign_tracker.reset()
         self.index_tracker.reset()
         self.derivatives_tracker.reset()
+        self.velocity_tracker.reset()
+        self.correlation_engine.reset()
         self._price_cache.clear()
         if self.price_tracker:
             self.price_tracker.reset()
