@@ -16,6 +16,8 @@ logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.I
 
 from app.database.pool import db
 from app.database.batch_writer import BatchWriter
+from app.analytics.backtest_engine import BacktestEngine
+from app.routers.backtest_router import router as backtest_router
 from app.routers.history_router import router as history_router
 from app.routers.market_router import router as market_router
 from app.services.futures_resolver import get_futures_symbols
@@ -53,6 +55,10 @@ vn30_symbols: list[str] = []
 
 _VN_TZ = zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")
 _RESET_TIME = time(15, 5)  # 15:05 VN — 5min after market close
+_BACKTEST_TIME = time(15, 30)  # 15:30 VN — 30min after close
+
+# Backtest engine — initialized in lifespan after DB connect
+backtest_engine: BacktestEngine | None = None
 
 
 async def _daily_reset_loop():
@@ -67,6 +73,23 @@ async def _daily_reset_loop():
         processor.reset_session()
         alert_service.reset_daily()
         logger.info("Daily reset complete at %s", datetime.now(_VN_TZ).isoformat())
+
+
+async def _daily_backtest_loop():
+    """Generate backtest report at 15:30 VN time daily."""
+    while True:
+        now = datetime.now(_VN_TZ)
+        target = now.replace(hour=_BACKTEST_TIME.hour, minute=_BACKTEST_TIME.minute,
+                             second=0, microsecond=0)
+        if now >= target:
+            target += timedelta(days=1)
+        await asyncio.sleep((target - now).total_seconds())
+        if backtest_engine is None:
+            continue
+        try:
+            await backtest_engine.run_daily_report()
+        except Exception:
+            logger.exception("Daily backtest report failed")
 
 
 def _on_new_alert(alert):
@@ -165,9 +188,19 @@ async def lifespan(app: FastAPI):
     # 10. Schedule daily reset at 15:05 VN time
     reset_task = asyncio.create_task(_daily_reset_loop())
 
+    # 11. Initialize backtest engine and schedule daily report at 15:30 VN
+    backtest_task = None
+    if db_available:
+        global backtest_engine
+        backtest_engine = BacktestEngine(db.pool)
+        app.state.backtest_engine = backtest_engine
+        backtest_task = asyncio.create_task(_daily_backtest_loop())
+
     yield
 
     # Shutdown (reverse order)
+    if backtest_task is not None:
+        backtest_task.cancel()
     reset_task.cancel()
     alert_service.unsubscribe(_on_new_alert)
     processor.unsubscribe(publisher.notify)
@@ -195,6 +228,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(backtest_router)
 app.include_router(history_router)
 app.include_router(market_router)
 app.include_router(ws_router)
