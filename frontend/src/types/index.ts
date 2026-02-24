@@ -211,7 +211,9 @@ export type AlertType =
   | "foreign_acceleration"
   | "basis_divergence"
   | "volume_spike"
-  | "price_breakout";
+  | "price_breakout"
+  | "velocity_divergence"
+  | "imbalance_extreme";
 
 export type AlertSeverity = "info" | "warning" | "critical";
 

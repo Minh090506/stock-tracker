@@ -18,6 +18,8 @@ class AlertType(str, Enum):
     BASIS_DIVERGENCE = "basis_divergence"
     VOLUME_SPIKE = "volume_spike"
     PRICE_BREAKOUT = "price_breakout"
+    VELOCITY_DIVERGENCE = "velocity_divergence"
+    IMBALANCE_EXTREME = "imbalance_extreme"
 
 
 class AlertSeverity(str, Enum):

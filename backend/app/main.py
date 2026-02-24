@@ -40,6 +40,7 @@ alert_service = AlertService()
 price_tracker = PriceTracker(
     alert_service, processor.quote_cache,
     processor.foreign_tracker, processor.derivatives_tracker,
+    velocity_tracker=processor.velocity_tracker,
 )
 processor.price_tracker = price_tracker
 market_ws_manager = ConnectionManager(channel="market")

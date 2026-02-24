@@ -13,6 +13,76 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [Phase 5 - Velocity Alert Signals] - 2026-02-24
+
+### Added
+
+**New Alert Types** (PriceTracker expanded from 4 to 6 signals):
+- **VELOCITY_DIVERGENCE** — Buy velocity surging but price flat/declining (WARNING severity)
+  - Detects momentum without price confirmation, potential reversal setup
+- **IMBALANCE_EXTREME** — Buy/sell velocity ratio > 3x or < 0.33x (WARNING severity)
+  - Detects extreme one-sided momentum, potential exhaustion signal
+
+**Frontend Enhancements**:
+- `signal-filter-chips.tsx` — Added "Velocity" and "Imbalance" filter options
+- Signals page now filters real-time alert feed by new signal types
+- Existing VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE types remain
+
+**Backend Changes**:
+- `PriceTracker` now monitors velocity alongside volume, price, foreign, and basis
+- New callbacks: `on_velocity_update()` for real-time velocity divergence detection
+- Alert broadcast continues via existing `/ws/alerts` channel (no new infrastructure)
+- Tests updated: All 6 signal types validated
+
+### Signal Summary
+- VOLUME_SPIKE: vol > 3× avg (CRITICAL)
+- PRICE_BREAKOUT: price hits ceiling/floor (CRITICAL)
+- FOREIGN_ACCELERATION: |net_value_Δ| > 30% in 5min (WARNING)
+- BASIS_DIVERGENCE: basis crosses zero (WARNING)
+- VELOCITY_DIVERGENCE: buy velocity up, price flat (WARNING) ← NEW
+- IMBALANCE_EXTREME: buy/sell ratio > 3x (WARNING) ← NEW
+
+### Status
+**Phase 5 Extension: 100% COMPLETE** — Velocity alert signals integrated into existing analytics engine
+
+---
+
+## [Velocity Analysis] - 2026-02-24
+
+### Added
+
+**Order Velocity Tracking (Phase 9)**:
+- Real-time order velocity analysis page with buy/sell velocity comparison
+- REST endpoints for velocity data and historical queries
+  - `GET /api/market/velocity` — Current snapshot
+  - `GET /api/market/velocity/history?symbol=VN30F2603&minutes=60` — Per-symbol history
+  - `GET /api/market/velocity/basket-history?minutes=60` — VN30 basket history
+- TimescaleDB continuous aggregates
+  - `order_velocity_1m` — 1-minute bucketed velocity per symbol
+  - `vn30_basket_velocity_1m` — Aggregated VN30 basket velocity
+- Correlation metrics for VN30F vs VN30 basket
+
+**Frontend Components**:
+- `/velocity-analysis` lazy-loaded route
+- `velocity-summary-cards.tsx` — Display buy/sell velocity + correlation
+- `velocity-price-overlay-chart.tsx` — Price chart with velocity overlay (green=buy, red=sell)
+- `velocity-imbalance-gauge.tsx` — Gauge showing VN30F vs VN30 velocity balance
+- `use-velocity-data` hook — WebSocket + REST polling hybrid data fetching
+- Added "Velocity" navigation item in sidebar
+
+**Type Definitions**:
+- `VelocityData` — Current snapshot
+- `VelocityHistoryPoint` — Historical records
+- `CorrelationData` — Cross-symbol correlation
+- Updated `MarketSnapshot` with `velocity` field
+
+**Use Cases**:
+- Detect order velocity imbalances between futures and spot markets
+- Identify when futures/spot correlation breaks down
+- Monitor real-time momentum shifts via velocity trends
+
+---
+
 ## [Deployment Fixes] - 2026-02-11
 
 ### Critical Bug Fixes

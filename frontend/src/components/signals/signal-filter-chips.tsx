@@ -18,6 +18,8 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
   { value: "volume_spike", label: "Volume" },
   { value: "basis_divergence", label: "Basis" },
   { value: "price_breakout", label: "Breakout" },
+  { value: "velocity_divergence", label: "Velocity" },
+  { value: "imbalance_extreme", label: "Imbalance" },
 ];
 
 const SEVERITY_OPTIONS: { value: SeverityFilter; label: string; color: string }[] = [

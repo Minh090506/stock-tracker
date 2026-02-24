@@ -680,15 +680,60 @@ useForeignFlow() hook (102 LOC)
 - Sector chart: <50ms render with 10 sectors
 - Cumulative chart: <100ms render with 1440 points
 
+### Velocity Analysis Dashboard (Phase 9 - COMPLETE)
+
+**Order Velocity Tracking Flow**:
+```
+React Component (VelocityPage)
+    ↓
+useVelocityData() hook (hybrid)
+    ├─ WebSocket /ws/velocity (Real-time)
+    │  └─ VelocitySnapshot (current buy/sell velocity, correlation)
+    │     └─ Summary cards + Gauge
+    │
+    └─ REST Polling /api/market/velocity/history (1m interval)
+       └─ Historical velocity points
+          └─ Time-series chart (60 min or 24h)
+```
+
+**Frontend Components** (Phase 9):
+- `velocity-summary-cards.tsx` — Display current buy/sell velocity + correlation
+- `velocity-price-overlay-chart.tsx` — Price chart with velocity overlay (green=buy, red=sell)
+- `velocity-imbalance-gauge.tsx` — Gauge showing VN30F vs VN30 velocity ratio (-1 to +1)
+- `velocity-page.tsx` — Layout: header → summary → overlay chart → gauge + history
+
+**Backend API Endpoints** (Phase 9):
+- `GET /api/market/velocity` — Current snapshot with buy/sell velocity + correlation
+- `GET /api/market/velocity/history?symbol=VN30F2603&minutes=60` — Per-symbol velocity history from `order_velocity_1m` aggregate
+- `GET /api/market/velocity/basket-history?minutes=60` — VN30 basket velocity history from `vn30_basket_velocity_1m` view
+
+**Database Layer** (Phase 9):
+- TimescaleDB continuous aggregates:
+  - `order_velocity_1m` — 1-min bucketed buy/sell volume for each symbol
+  - `vn30_basket_velocity_1m` — Aggregated velocity for VN30 basket
+- Correlation calculated real-time from VN30F + VN30 price deltas
+
+**Data Types**:
+- `VelocityData` — Current snapshot (buy_velocity, sell_velocity, net_velocity, correlation)
+- `VelocityHistoryPoint` — Historical record (timestamp, symbol, velocities, correlation)
+- `CorrelationData` — Cross-symbol correlation metrics
+- Updated `MarketSnapshot` type includes `velocity` field
+
+**Performance**:
+- WS latency: <100ms
+- REST polling: 1m interval (low overhead)
+- Overlay chart: <150ms render with 1-hour data
+- Gauge: <50ms update frequency
+
 ## Phase 6: Analytics Engine (COMPLETE)
 
 **Alert Infrastructure**: `alert_models.py`, `alert_service.py` (~142 LOC)
-- AlertType enum: FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VOLUME_SPIKE, PRICE_BREAKOUT
+- AlertType enum: VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VELOCITY_DIVERGENCE, IMBALANCE_EXTREME
 - AlertSeverity: INFO, WARNING, CRITICAL
 - In-memory buffer (deque maxlen=500), 60s dedup
 
 **PriceTracker** (`price_tracker.py`, ~180 LOC):
-- 4 signals: VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE
+- 6 signals: VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE, VELOCITY_DIVERGENCE, IMBALANCE_EXTREME
 - Callbacks wired: `on_trade()`, `on_foreign()`, `on_basis_update()`
 - Tests: 31 passing
 

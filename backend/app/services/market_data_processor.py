@@ -147,7 +147,7 @@ class MarketDataProcessor:
             classified.symbol, classified.volume, classified.value,
             is_buy, classified.timestamp,
         )
-        # Check if any symbol completed a minute — update correlation
+        # Check if any symbol completed a minute — update correlation + alerts
         if self.velocity_tracker.get_minute_rotated_symbols():
             vn30f_vel = self.velocity_tracker.get_vn30f_velocity()
             active = self.derivatives_tracker.active_symbol
@@ -156,6 +156,9 @@ class MarketDataProcessor:
                 self.correlation_engine.on_minute_tick(
                     vn30f_vel.net_vol_per_min, vn30f_price,
                 )
+            # Trigger velocity-based alert checks
+            if self.price_tracker:
+                self.price_tracker.on_velocity_update()
 
     # -- Unified API --
 

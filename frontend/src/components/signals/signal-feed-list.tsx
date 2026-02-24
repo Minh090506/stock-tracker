@@ -33,6 +33,8 @@ const TYPE_ICONS: Record<AlertType, string> = {
   basis_divergence: "BD",
   volume_spike: "VS",
   price_breakout: "PB",
+  velocity_divergence: "VD",
+  imbalance_extreme: "IE",
 };
 
 const TYPE_COLORS: Record<AlertType, string> = {
@@ -40,6 +42,8 @@ const TYPE_COLORS: Record<AlertType, string> = {
   basis_divergence: "text-cyan-400",
   volume_spike: "text-orange-400",
   price_breakout: "text-emerald-400",
+  velocity_divergence: "text-violet-400",
+  imbalance_extreme: "text-rose-400",
 };
 
 function extractTime(isoTimestamp: string): string {
