@@ -146,6 +146,43 @@ export interface IndexCandleData {
   volume: number;
 }
 
+// -- Velocity --
+
+export interface VelocityData {
+  symbol: string;
+  buy_vol_per_min: number;
+  sell_vol_per_min: number;
+  net_vol_per_min: number;
+  buy_count_per_min: number;
+  sell_count_per_min: number;
+  imbalance_ratio: number;
+  acceleration: number;
+  last_updated: string | null;
+}
+
+export interface CorrelationData {
+  coefficient: number;
+  sample_size: number;
+  window_minutes: number;
+  last_updated: string | null;
+}
+
+export interface VelocitySnapshot {
+  vn30f: VelocityData | null;
+  basket: VelocityData | null;
+  correlation: CorrelationData | null;
+}
+
+export interface VelocityHistoryPoint {
+  timestamp: string;
+  buy_vol: number;
+  sell_vol: number;
+  buy_count: number;
+  sell_count: number;
+  buy_value: number;
+  sell_value: number;
+}
+
 // -- Unified snapshot --
 
 export interface MarketSnapshot {
@@ -154,6 +191,7 @@ export interface MarketSnapshot {
   indices: Record<string, IndexData>;
   foreign: ForeignSummary | null;
   derivatives: DerivativesData | null;
+  velocity: VelocitySnapshot | null;
 }
 
 // -- API response wrappers --

@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { to: "/foreign-flow", label: "Foreign Flow" },
   { to: "/volume", label: "Volume Analysis" },
   { to: "/derivatives", label: "Derivatives" },
+  { to: "/velocity-analysis", label: "Velocity" },
   { to: "/signals", label: "Signals" },
 ] as const;
 
