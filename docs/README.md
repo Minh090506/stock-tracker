@@ -159,13 +159,14 @@ docker compose -f docker-compose.test.yml up --scale locust-worker=4
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](architecture.md) | System design with diagrams |
+| [System Architecture](system-architecture.md) | Overall system design, services, CI/CD, performance |
+| [Architecture](architecture.md) | Detailed diagrams (data flow, message routing, database schema) |
 | [API Reference](api-reference.md) | All REST + WebSocket endpoints |
-| [Deployment](deployment.md) | Docker deploy guide, env vars, health checks |
+| [Deployment Guide](deployment-guide.md) | Docker deploy, VPS production, env vars, health checks |
 | [Monitoring](monitoring.md) | Grafana dashboards + Prometheus setup |
-| [System Architecture](system-architecture.md) | Detailed technical architecture (903 lines) |
-| [Code Standards](code-standards.md) | Coding conventions |
+| [Code Standards](code-standards.md) | Coding conventions (Python/TypeScript, KRX futures) |
 | [Development Roadmap](development-roadmap.md) | Phase progress tracking |
+| [Codebase Summary](codebase-summary.md) | File structure and architecture |
 
 ## VN Market Color Convention
 

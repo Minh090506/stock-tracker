@@ -208,7 +208,7 @@ class PriceData(BaseModel):
   - Sound notifications on new alerts
   - Returns: `{ alerts, status, isLive, soundEnabled, toggleSound }`
 
-## Frontend Structure (50 files, 3257 LOC)
+## Frontend Structure (71 files, ~5,217 LOC)
 
 ### Hooks
 

@@ -293,6 +293,155 @@ docker-compose -f docker-compose.prod.yml ps
 docker-compose -f docker-compose.prod.yml exec nginx wget --no-verbose --tries=1 --spider http://localhost/health
 ```
 
+## Production VPS Deployment (Hetzner CX22)
+
+### Deployment Environment
+
+**Instance**: Hetzner Cloud CX22 VPS
+- **CPU**: 2 vCPU (Intel Xeon)
+- **Memory**: 4 GB RAM
+- **Disk**: 40 GB NVMe SSD
+- **Network**: 20 Gbit/s shared bandwidth
+- **Cost**: €4.90/month
+
+**Deployed Services**:
+1. Nginx (reverse proxy + SSL/TLS termination)
+2. FastAPI backend (8000)
+3. React frontend (static)
+4. TimescaleDB (5432)
+5. Prometheus (9090)
+6. Grafana (3000)
+
+### Domain & SSL Configuration
+
+**Domain**: `stock.myvivatour.com`
+
+**SSL Setup** (Cloudflare + Full SSL Mode):
+1. DNS records point to Cloudflare nameservers
+2. Cloudflare SSL/TLS mode: **Full** (encrypt end-to-end)
+3. Nginx listens on:
+   - `0.0.0.0:80` (HTTP redirects to HTTPS via Cloudflare)
+   - `0.0.0.0:443` (HTTPS with self-signed cert or Cloudflare-managed)
+4. Cloudflare origin certificate installed in nginx.conf (optional for Full mode)
+
+**CORS Configuration** (for stock.myvivatour.com):
+```python
+# backend/app/main.py
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://stock.myvivatour.com", "http://localhost"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+```
+
+**Nginx SSL Block** (for HTTPS/443):
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name stock.myvivatour.com;
+
+    ssl_certificate /etc/nginx/certs/cloudflare.crt;
+    ssl_certificate_key /etc/nginx/certs/cloudflare.key;
+
+    # Cloudflare SSL settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Rest of config
+    include /etc/nginx/conf.d/proxy.conf;
+}
+
+# HTTP → HTTPS redirect
+server {
+    listen 80;
+    server_name stock.myvivatour.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+### Deployment Procedure
+
+**Initial Setup**:
+```bash
+# 1. SSH into VPS
+ssh root@<vps-ip>
+
+# 2. Clone repository
+git clone https://github.com/yourusername/stock-tracker.git
+cd stock-tracker
+
+# 3. Copy environment template and configure
+cp .env.example .env
+# Edit .env with SSI credentials and domain
+
+# 4. Build and deploy with docker-compose
+docker-compose -f docker-compose.prod.yml up -d
+
+# 5. Verify health
+curl https://stock.myvivatour.com/health
+```
+
+**Post-Deployment**:
+```bash
+# Check all services running
+docker-compose -f docker-compose.prod.yml ps
+
+# View logs
+docker-compose -f docker-compose.prod.yml logs -f
+
+# Test API endpoint
+curl -H "Origin: https://stock.myvivatour.com" \
+  https://stock.myvivatour.com/api/market/snapshot
+
+# Access dashboards
+# Frontend: https://stock.myvivatour.com
+# Grafana: https://stock.myvivatour.com/grafana (if exposed)
+# Prometheus: https://stock.myvivatour.com/prometheus (if exposed)
+```
+
+### Monitoring & Maintenance
+
+**Log Rotation**:
+```bash
+# Docker logs are automatically managed
+# For large deployments, configure in /etc/docker/daemon.json
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+```
+
+**Backup Strategy**:
+```bash
+# Backup TimescaleDB daily
+docker exec timescaledb pg_dump -U stock stock_tracker > backup_$(date +%Y%m%d).sql
+
+# Backup to external storage (e.g., S3)
+aws s3 cp backup_*.sql s3://your-bucket/backups/
+```
+
+**Update Procedure**:
+```bash
+# Pull latest code
+git pull origin main
+
+# Rebuild images
+docker-compose -f docker-compose.prod.yml build --no-cache
+
+# Restart services
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+---
+
 ## Troubleshooting
 
 ### Backend Fails to Start

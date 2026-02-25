@@ -248,6 +248,48 @@ results = parse_message_multi(content, rtype="X")
 # Returns list of Trade and Quote messages separately
 ```
 
+### Derivatives Contract Naming (KRX Format Support)
+
+**Legacy VN30F Format** (pre-May 2025):
+- Pattern: `VN30F{YY}{MM}` where YY=2-digit year, MM=month
+- Examples: `VN30F2603`, `VN30F2606` (March 2026, June 2026)
+- Used exclusively before May 2025
+
+**KRX Format** (post-May 2025):
+- Pattern: `41I1{Y}{M}000` where Y=1-digit year, M=1-digit month
+- Examples: `41I15003000`, `41I16006000` (May 2025, June 2026)
+- Zero-padded year: Jan=0, Feb=1, ..., Dec=11 (cyclic)
+- Always ends with `000` (placeholder for strike/settlement)
+
+**Active Contract Detection** (`futures_resolver.py`):
+```python
+# Supports BOTH formats
+futures_resolver.detect_active_contract(contracts=[
+    "VN30F2603",      # Legacy format (March 2026)
+    "41I15003000",    # KRX format (May 2025)
+    "VN30F2606"       # Legacy format (June 2026)
+])
+# Returns contract with highest volume
+```
+
+**Frontend Support** (`futures-format-utils.ts`):
+```typescript
+// Normalize contract names for display
+export function normalizeContractName(contract: string): string {
+  if (contract.startsWith('41I1')) {
+    // Parse KRX: 41I1{Y}{M}000 → "KRX {year}-{month}"
+    return `KRX ${extractKRXInfo(contract)}`;
+  }
+  // Legacy: VN30F2603 → "VN30F Mar-26"
+  return normalizeVN30F(contract);
+}
+```
+
+**Futures Hook** (`use-futures-contracts.ts`):
+- React hook that auto-detects and normalizes both formats
+- Updates on contract change events
+- Caches normalized names for performance
+
 ---
 
 ## TypeScript/React Standards (Frontend)

@@ -10,7 +10,56 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ### Future
 - Phase 9: Advanced features (GraphQL API, Redis caching, WebSocket compression)
-- VPS Production Deployment: Scaling infrastructure on Hetzner CX22 VPS
+
+---
+
+## [Production Deployment + KRX Futures Support] - 2026-02-25
+
+### Added
+
+**KRX Futures Contract Format Support** (Commit: e4cb682):
+- Full support for post-May 2025 KRX contract naming: `41I1{Y}{M}000` format
+- Parallel support for legacy VN30F format: `VN30F{YY}{MM}`
+- New utilities: `futures-format-utils.ts` for contract name normalization
+- New hook: `use-futures-contracts.ts` for reactive contract tracking
+- Backend updates: `futures_resolver.py` detects active contract from both formats
+- Frontend updates: `chart-page.tsx`, `backtest-controls.tsx`, `velocity-page.tsx` support both formats
+- Seamless migration path for traders during May 2025 transition
+
+**Production VPS Deployment** (Commits: 6758c23, dfda15a):
+- Deployed on Hetzner Cloud CX22 VPS (2 vCPU, 4GB RAM, €4.90/month)
+- Domain: `stock.myvivatour.com` with Cloudflare SSL proxy (Full mode)
+- All 7 services containerized: Nginx, Backend, Frontend, TimescaleDB, Prometheus, Grafana
+- HTTPS/443 support via Cloudflare origin certificate + Nginx SSL termination
+- CORS configuration for cross-origin requests from stock.myvivatour.com
+- Health checks enabled on all services
+- Monitoring accessible via Grafana dashboard
+
+### Changed
+- Nginx configuration updated to support HTTPS/443 for Cloudflare Full SSL mode
+- CORS middleware configured to accept requests from stock.myvivatour.com
+- Environment variables updated for production domain
+
+### Fixed
+- KRX contract naming compatibility for post-May 2025 futures contracts
+- Cloudflare Full SSL mode requires HTTPS on origin (Nginx now listens on 443)
+
+### Files Created
+- `frontend/src/utils/futures-format-utils.ts` — Contract name normalization
+- `frontend/src/hooks/use-futures-contracts.ts` — Futures contract tracking hook
+- `nginx/ssl/` — Cloudflare certificates directory
+
+### Files Modified
+- `backend/app/services/futures_resolver.py` — Support both format patterns
+- `backend/app/routers/market_router.py` — Handle both contract formats
+- `frontend/src/pages/chart-page.tsx` — Display normalized contract names
+- `frontend/src/pages/backtest-controls.tsx` — Select from both contract formats
+- `frontend/src/pages/velocity-page.tsx` — Accept both contract formats
+- `nginx/nginx.conf` — Added HTTPS/443 support with SSL termination
+- `docker-compose.prod.yml` — Updated with production domain configuration
+
+### Status
+**Production Ready**: VPS deployment verified. All services operational. Monitoring active.
 
 ---
 
