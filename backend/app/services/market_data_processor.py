@@ -26,6 +26,7 @@ from app.models.ssi_messages import (
 from app.services.correlation_engine import CorrelationEngine
 from app.services.derivatives_tracker import DerivativesTracker
 from app.services.foreign_investor_tracker import ForeignInvestorTracker
+from app.services.futures_resolver import is_vn30f_derivative
 from app.services.index_tracker import IndexTracker
 from app.services.quote_cache import QuoteCache
 from app.services.session_aggregator import SessionAggregator
@@ -68,11 +69,11 @@ class MarketDataProcessor:
         logger.info("Watchlist set: %d symbols", len(symbols))
 
     def _is_watched(self, symbol: str) -> bool:
-        """Check if symbol is in watchlist. VN30F* always allowed for derivatives."""
+        """Check if symbol is in watchlist. VN30F derivatives always allowed."""
         if not self._watchlist:
             return True  # no filter
-        if symbol.startswith("VN30F"):
-            return True  # futures always tracked
+        if is_vn30f_derivative(symbol):
+            return True  # futures always tracked (KRX 41I1* or legacy VN30F*)
         return symbol in self._watchlist
 
     # -- Stream callbacks --
@@ -93,7 +94,7 @@ class MarketDataProcessor:
         if not self._is_watched(msg.symbol):
             return None, None, None
 
-        if msg.symbol.startswith("VN30F"):
+        if is_vn30f_derivative(msg.symbol):
             bp = self.derivatives_tracker.update_from_trade(msg)
             if bp and self.price_tracker:
                 self.price_tracker.on_basis_update()

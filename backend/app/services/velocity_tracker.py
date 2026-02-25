@@ -10,6 +10,7 @@ from collections import deque
 from datetime import datetime
 
 from app.models.domain import VelocityData
+from app.services.futures_resolver import is_vn30f_derivative
 
 logger = logging.getLogger(__name__)
 
@@ -138,11 +139,11 @@ class VelocityTracker:
     def get_vn30f_velocity(self) -> VelocityData | None:
         """Get velocity for the active VN30F contract (any VN30F* symbol)."""
         for symbol in self._history:
-            if symbol.startswith("VN30F"):
+            if is_vn30f_derivative(symbol):
                 return self._compute_velocity(symbol)
         # Check current buckets too (no history yet)
         for symbol in self._current:
-            if symbol.startswith("VN30F"):
+            if is_vn30f_derivative(symbol):
                 return VelocityData(symbol=symbol, last_updated=datetime.now())
         return None
 
@@ -156,7 +157,7 @@ class VelocityTracker:
         count = 0
 
         for symbol, history in self._history.items():
-            if symbol.startswith("VN30F"):
+            if is_vn30f_derivative(symbol):
                 continue
             window = list(history)[-_SPEED_WINDOW_MIN:]
             n = len(window)

@@ -1,7 +1,8 @@
 /** Backtest analysis dashboard — correlation heatmap, threshold table, patterns. */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useBacktestData } from "../hooks/use-backtest-data";
+import { useFuturesContracts } from "../hooks/use-futures-contracts";
 import { BacktestSkeleton } from "../components/ui/backtest-skeleton";
 import { ErrorBanner } from "../components/ui/error-banner";
 import { BacktestControls } from "../components/backtest/backtest-controls";
@@ -13,8 +14,14 @@ import { BacktestPatternChart } from "../components/backtest/backtest-pattern-ch
 export default function BacktestPage() {
   const { summary, custom, loading, analyzing, error, analysisError, runAnalysis } =
     useBacktestData();
+  const { contracts, primary } = useFuturesContracts();
 
-  const [symbol, setSymbol] = useState("VN30F2603");
+  const [symbol, setSymbol] = useState("");
+
+  // Set symbol from API-resolved primary contract on first load
+  useEffect(() => {
+    if (!symbol && primary) setSymbol(primary);
+  }, [primary, symbol]);
   const [days, setDays] = useState(20);
   const [lookahead, setLookahead] = useState(5);
 
@@ -38,6 +45,7 @@ export default function BacktestPage() {
         days={days}
         lookahead={lookahead}
         analyzing={analyzing}
+        futuresContracts={contracts}
         onSymbolChange={setSymbol}
         onDaysChange={setDays}
         onLookaheadChange={setLookahead}

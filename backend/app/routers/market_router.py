@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from app.analytics.alert_models import AlertSeverity, AlertType
 from app.database.history_service import HistoryService
 from app.database.pool import db
+from app.services.futures_resolver import get_futures_symbols, get_primary_futures_symbol
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -22,6 +23,15 @@ def _get_history_svc(request: Request) -> HistoryService:
     if _history_svc is None:
         _history_svc = HistoryService(db)
     return _history_svc
+
+
+@router.get("/futures-contracts")
+async def get_futures_contracts():
+    """Return active VN30F contracts and the front-month (primary) symbol."""
+    return {
+        "contracts": get_futures_symbols(),
+        "primary": get_primary_futures_symbol(),
+    }
 
 
 @router.get("/snapshot")

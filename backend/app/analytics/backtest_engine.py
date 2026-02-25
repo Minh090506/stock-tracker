@@ -26,6 +26,7 @@ from app.analytics.backtest_queries import (
     VELOCITY_PRICE_SQL,
 )
 from app.analytics.backtest_utils import pearson, session_phase
+from app.services.futures_resolver import is_vn30f_derivative
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class BacktestEngine:
         self, symbol: str, date_from: datetime, date_to: datetime,
     ) -> list[dict]:
         """Fetch joined velocity+price rows. Uses basket view for non-futures."""
-        is_futures = symbol.startswith("VN30F")
+        is_futures = is_vn30f_derivative(symbol)
         sql = VELOCITY_PRICE_SQL if is_futures else BASKET_VELOCITY_PRICE_SQL
         rows = await self._pool.fetch(sql, symbol, date_from, date_to)
         return [dict(r) for r in rows if r["vn30f_price"] is not None]

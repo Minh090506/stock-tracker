@@ -13,6 +13,8 @@ interface VelocityPageData {
 }
 
 export function useVelocityData(
+  /** Active VN30F contract symbol for history query (KRX or legacy format) */
+  futuresSymbol = "",
   historyMinutes = 60,
   historyPollMs = 10_000,
 ): VelocityPageData {
@@ -21,10 +23,15 @@ export function useVelocityData(
     fallbackIntervalMs: 5000,
   });
 
+  // Use active contract from snapshot if caller didn't provide one
+  const symbol = futuresSymbol || ws.data?.derivatives?.symbol || "";
+
   const history = usePolling(
-    () => apiFetch<VelocityHistoryPoint[]>(
-      `/market/velocity/history?symbol=VN30F&minutes=${historyMinutes}`
-    ),
+    symbol
+      ? () => apiFetch<VelocityHistoryPoint[]>(
+          `/market/velocity/history?symbol=${symbol}&minutes=${historyMinutes}`
+        )
+      : () => Promise.resolve([]),
     historyPollMs,
   );
 

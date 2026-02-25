@@ -6,15 +6,19 @@
 
 import { useState, useEffect } from "react";
 import { useCandleData } from "../hooks/use-candle-data";
+import { useFuturesContracts, isVn30fDerivative } from "../hooks/use-futures-contracts";
 import { CandlestickChart } from "../components/charts/candlestick-chart";
 import { apiFetch } from "../utils/api-client";
 
-/** Default symbol shown on load */
-const DEFAULT_SYMBOL = "VN30F2503";
-
 export default function ChartPage() {
-  const [symbol, setSymbol] = useState(DEFAULT_SYMBOL);
+  const { primary } = useFuturesContracts();
+  const [symbol, setSymbol] = useState("");
   const [vn30Symbols, setVn30Symbols] = useState<string[]>([]);
+
+  // Set symbol from API-resolved primary contract on first load
+  useEffect(() => {
+    if (!symbol && primary) setSymbol(primary);
+  }, [primary, symbol]);
 
   // Fetch VN30 component list for symbol selector
   useEffect(() => {
@@ -36,7 +40,7 @@ export default function ChartPage() {
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Quick-select chips for key symbols */}
-          {[DEFAULT_SYMBOL, "VN30"].map((s) => (
+          {[primary, "VN30"].map((s) => (
             <button
               key={s}
               onClick={() => setSymbol(s)}
@@ -108,8 +112,8 @@ export default function ChartPage() {
         <CandlestickChart
           candles={candles}
           volumes={volumes}
-          indexCandles={symbol.startsWith("VN30F") ? indexCandles : []}
-          basisPoints={symbol.startsWith("VN30F") ? basisPoints : []}
+          indexCandles={isVn30fDerivative(symbol) ? indexCandles : []}
+          basisPoints={isVn30fDerivative(symbol) ? basisPoints : []}
           height={500}
         />
       )}

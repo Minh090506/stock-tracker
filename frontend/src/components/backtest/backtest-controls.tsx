@@ -1,20 +1,20 @@
 /** Controls bar: symbol selector, days dropdown, lookahead, run button. */
 
+import { useMemo } from "react";
+import { formatKrxLabel } from "../../utils/futures-format-utils";
+
 interface BacktestControlsProps {
   symbol: string;
   days: number;
   lookahead: number;
   analyzing: boolean;
+  /** Active VN30F contracts from /api/market/futures-contracts */
+  futuresContracts: string[];
   onSymbolChange: (v: string) => void;
   onDaysChange: (v: number) => void;
   onLookaheadChange: (v: number) => void;
   onRun: () => void;
 }
-
-const SYMBOLS = [
-  { value: "VN30F2603", label: "VN30F (Phai sinh)" },
-  { value: "VN30", label: "VN30 Basket (Ro co so)" },
-];
 
 const DAYS_OPTIONS = [5, 10, 20, 30];
 const LOOKAHEAD_OPTIONS = [1, 3, 5, 10];
@@ -24,11 +24,19 @@ export function BacktestControls({
   days,
   lookahead,
   analyzing,
+  futuresContracts,
   onSymbolChange,
   onDaysChange,
   onLookaheadChange,
   onRun,
 }: BacktestControlsProps) {
+  // Build symbol options dynamically from active contracts
+  const symbolOptions = useMemo(() => {
+    const opts = futuresContracts.map((c) => ({ value: c, label: formatKrxLabel(c) }));
+    opts.push({ value: "VN30", label: "VN30 Basket (Ro co so)" });
+    return opts;
+  }, [futuresContracts]);
+
   const selectClass =
     "bg-gray-800 border border-gray-700 text-gray-200 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500";
 
@@ -41,7 +49,7 @@ export function BacktestControls({
           onChange={(e) => onSymbolChange(e.target.value)}
           className={selectClass}
         >
-          {SYMBOLS.map((s) => (
+          {symbolOptions.map((s) => (
             <option key={s.value} value={s.value}>
               {s.label}
             </option>

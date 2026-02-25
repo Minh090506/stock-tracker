@@ -129,7 +129,9 @@ async def lifespan(app: FastAPI):
     processor.set_watchlist(watchlist)
 
     # 5. Build channel list and connect stream
+    # Log active VN30F contracts for operator visibility
     futures_symbols = get_futures_symbols()
+    logger.info("Active VN30F contracts: %s", futures_symbols)
     # SSI FastConnect valid channels: F (status), X (market data),
     # R (foreign room), MI (index), B (bar/OHLC).
     # Each channel type can only be subscribed ONCE.
