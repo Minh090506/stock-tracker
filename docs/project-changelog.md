@@ -8,8 +8,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
-### In Progress
+### Future
 - Phase 9: Advanced features (GraphQL API, Redis caching, WebSocket compression)
+- VPS Production Deployment: Scaling infrastructure on Hetzner CX22 VPS
 
 ---
 

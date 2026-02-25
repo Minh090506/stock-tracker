@@ -150,7 +150,7 @@ Real-time alerts (filterable).
 | Param | Default | Description |
 |-------|---------|-------------|
 | `limit` | `50` | Max alerts returned |
-| `type` | *(all)* | Filter: `VOLUME_SPIKE`, `PRICE_BREAKOUT`, `FOREIGN_ACCELERATION`, `BASIS_DIVERGENCE` |
+| `type` | *(all)* | Filter: `VOLUME_SPIKE`, `PRICE_BREAKOUT`, `FOREIGN_ACCELERATION`, `BASIS_DIVERGENCE`, `VELOCITY_DIVERGENCE`, `IMBALANCE_EXTREME` |
 | `severity` | *(all)* | Filter: `WARNING`, `CRITICAL` |
 
 **Response**:
@@ -324,6 +324,114 @@ Index value history. `index_name`: `VN30` or `VNINDEX`.
 Futures contract history. `contract`: e.g. `VN30F2603`.
 
 **Query params**: `start`, `end`
+
+---
+
+### Backtest Analysis
+
+#### `GET /api/backtest/summary`
+
+Pre-computed daily backtest report (cached after 15:30 VN daily run).
+
+**Response**:
+```json
+{
+  "date": "2026-02-24",
+  "symbols_analyzed": ["VN30F2603"],
+  "correlation": {
+    "symbol": "VN30F2603",
+    "lag_correlations": [
+      {"lag_minutes": 0, "correlation": 0.72},
+      {"lag_minutes": 1, "correlation": 0.68},
+      ...
+    ],
+    "best_lag": 0,
+    "peak_correlation": 0.72
+  },
+  "thresholds": {...},
+  "patterns": {...}
+}
+```
+
+#### `GET /api/backtest/correlation`
+
+On-demand cross-correlation (lead-lag) analysis between velocity and price.
+
+**Query params**:
+| Param | Default | Description |
+|-------|---------|-------------|
+| `symbol` | `VN30F2603` | Futures symbol for analysis |
+| `days` | `20` | Lookback trading days (5-90) |
+| `max_lag` | `10` | Max lag in minutes (1-30) |
+
+**Response**:
+```json
+{
+  "symbol": "VN30F2603",
+  "days_analyzed": 20,
+  "lag_correlations": [
+    {"lag_minutes": 0, "correlation": 0.72, "samples": 5400},
+    {"lag_minutes": 1, "correlation": 0.68, "samples": 5340}
+  ],
+  "best_lag": 0,
+  "peak_correlation": 0.72
+}
+```
+
+#### `GET /api/backtest/threshold`
+
+On-demand threshold discovery (order imbalance → price direction).
+
+**Query params**:
+| Param | Default | Description |
+|-------|---------|-------------|
+| `symbol` | `VN30F2603` | Futures symbol for analysis |
+| `days` | `20` | Lookback trading days (5-90) |
+| `lookahead` | `5` | Price lookahead minutes (1-30) |
+| `bins` | `5` | Number of imbalance bins (3-10) |
+
+**Response**:
+```json
+{
+  "symbol": "VN30F2603",
+  "bins": [
+    {
+      "bin_min": -10.0,
+      "bin_max": -5.0,
+      "imbalance_ratio": -7.5,
+      "price_up_probability": 0.35,
+      "avg_magnitude": 0.12,
+      "samples": 200
+    }
+  ]
+}
+```
+
+#### `GET /api/backtest/patterns`
+
+On-demand time-of-day pattern analysis (correlation by hour and session phase).
+
+**Query params**:
+| Param | Default | Description |
+|-------|---------|-------------|
+| `symbol` | `VN30F2603` | Futures symbol for analysis |
+| `days` | `20` | Lookback trading days (5-90) |
+
+**Response**:
+```json
+{
+  "symbol": "VN30F2603",
+  "patterns": [
+    {
+      "hour": 9,
+      "session": "ATO",
+      "correlation": 0.65,
+      "imbalance_ratio": 2.3,
+      "samples": 20
+    }
+  ]
+}
+```
 
 ---
 

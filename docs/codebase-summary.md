@@ -119,297 +119,56 @@ tests/
     └── test_session_lifecycle.py         # Session transitions (5 tests)
 ```
 
-## Phase-by-Phase Implementation
+## Phase Overview
 
-### Phase 1: Project Scaffolding (COMPLETE)
-- FastAPI application structure
-- pydantic config management
-- Health check endpoint
-- Docker setup
+**Phases 1-8**: Core platform (scaffolding → SSI integration → data processing → WebSocket → Frontend → Analytics → Database → CI/CD/Testing)
+**Phase 7B**: Backtest analysis dashboard (cross-correlation, threshold discovery, pattern analysis)
+**Phase 9+**: Velocity analysis, VPS deployment, advanced features
 
-**Key Files**:
-- `app/main.py` - FastAPI + lifespan context
-- `app/config.py` - Settings from `.env`
+### Core Data Processing (Phases 3A-3C)
 
-### Phase 2: SSI Integration & Stream Demux (COMPLETE)
-- OAuth2 authentication (with SimpleNamespace config, SSIAccessTokenRequest dataclass)
-- WebSocket connection to fc-datahub.ssi.com.vn (NOT fc-data.ssi.com.vn!)
-- Message demultiplexing by RType; X:ALL channel split into Trade+Quote via parse_message_multi()
-- Field normalization (handles double JSON parsing in SSI Content field)
+**Trade Classification**: QuoteCache → TradeClassifier (MUA/BAN/NEUTRAL) → SessionAggregator (ATO/Continuous/ATC breakdown)
+- Uses per-trade `LastVol` (not cumulative `TotalVol`)
+- 28 unit tests with invariant validation
 
-**Key Files**:
-- `app/services/ssi_auth_service.py` - OAuth2 token management (SimpleNamespace config)
-- `app/services/ssi_stream_service.py` - SignalR WebSocket (fc-datahub.ssi.com.vn domain)
-- `app/services/ssi_market_service.py` - REST API lookups (fc-data.ssi.com.vn), dataclass models
-- `app/services/ssi_field_normalizer.py` - Field mapping + parse_message_multi() for X:ALL splitting
-- `app/services/futures_resolver.py` - VN30F contract resolution
-- `app/models/ssi_messages.py` - Message models
+**Foreign & Index Tracking**: Delta computation + 5-min speed window, index breadth tracking
+- 56+ tests covering speed, acceleration, breadth ratios, sparklines
 
-### Phase 3A: Trade Classification (COMPLETE)
-Core trade processing pipeline:
+**Derivatives Basis**: futures_price - spot_index, multi-contract support with volume-based active selection
+- 34 tests covering basis calc, premium/discount, multi-contract tracking
 
-**Key Files**:
-- `app/services/quote_cache.py` - Bid/ask storage
-- `app/services/trade_classifier.py` - Classification logic
-- `app/services/session_aggregator.py` - Per-symbol accumulation with session breakdown
+**Unified API**: MarketDataProcessor orchestrates all services, provides get_market_snapshot(), reset_daily()
+- 232 total Phase 3 tests passing
 
-**Data Flow**:
-```
-Quote Message → QuoteCache (stores bid/ask)
-Trade Message → TradeClassifier (compares vs bid/ask) → SessionAggregator (accumulates by session phase)
-```
+## Backend Architecture
 
-**Models**:
-- `ClassifiedTrade` - Single trade with trade_type + trading_session
-- `SessionBreakdown` - Volume split for one session phase (ATO/Continuous/ATC)
-- `SessionStats` - Aggregated mua/ban/neutral with per-session breakdown (ato, continuous, atc)
+**Service Layer**: 10+ services (QuoteCache, TradeClassifier, SessionAggregator, ForeignInvestorTracker, IndexTracker, DerivativesTracker, MarketDataProcessor, AlertService, PriceTracker, BacktestEngine)
 
-**Session Phase Tracking**:
-Each trade carries `trading_session` field ("ATO", "ATC", or "" for continuous).
-SessionAggregator splits volumes into three SessionBreakdown buckets per symbol,
-enabling session-phase analysis for volume studies.
+**Stateful & Resetable**: All in-memory, daily reset at 15:00 VN, thread-safe via asyncio
 
-**Tests**: 28 unit tests covering:
-- Classification logic (MUA/BAN/NEUTRAL)
-- Session phase routing (ATO/Continuous/ATC)
-- Per-session volume accumulation
-- Invariant test: sum of all phases == total
-- Reset behavior
+**API Routers**: health, market_router, history_router, backtest_router (4 endpoints), WebSocket router (3 channels)
 
-### Phase 3B: Foreign Investor & Index Tracking (COMPLETE)
-Extended market data tracking:
+**Analytics**: AlertService (in-mem buffer, 60s dedup), PriceTracker (4→6 signal types), BacktestEngine (cross-correlation, threshold discovery, pattern analysis)
 
-**Key Files**:
-- `app/services/foreign_investor_tracker.py` - Foreign flow analytics
-- `app/services/index_tracker.py` - Index monitoring
+## Critical Implementation Notes
 
-**Data Flow**:
-```
-Foreign Message (R:ALL) → ForeignInvestorTracker (delta + speed calculation)
-Index Message (MI:*) → IndexTracker (stores values + breadth)
-```
+- **Trade Classification**: Uses `trade.last_vol` (per-trade, NOT cumulative `total_vol`)
+- **Session Phases**: Trades routed to ATO/Continuous/ATC buckets based on `trading_session` field
+- **Foreign Speed**: Delta computed from cumulative SSI data, speed over 5-min rolling window
+- **Basis**: futures_price - spot_index; zero-division guarded; tracks premium/discount
+- **SSI Config**: Two domains (REST=fc-data.ssi.com.vn, WebSocket=fc-datahub.ssi.com.vn); X:ALL split via parse_message_multi()
+- **Alert Dedup**: 60s window per (type, symbol) pair; buffer maxlen=500
+- **Backtest**: Pre-compute daily at 15:30 VN; pure Python correlation (no numpy)
 
-**Models**:
-- `ForeignInvestorData` - Buy/sell volume, speed, acceleration
-- `ForeignSummary` - Aggregate + top movers
-- `IndexData` - Index value, advances/declines, intraday sparkline
-- `IntradayPoint` - Sparkline data point
+## Test Coverage
 
-**Tests**: 56+ unit tests covering:
-- Delta computation from cumulative data
-- Speed calculation (5-min rolling window)
-- Acceleration tracking
-- Index breadth ratios
-- Sparkline management
-- Reset and rollover
-
-### Phase 3C: Derivatives Tracking (COMPLETE)
-Futures and basis analysis:
-
-**Key Files**:
-- `app/services/derivatives_tracker.py` - Basis calculation
-- `app/models/domain.py` - Updated with BasisPoint, DerivativesData, MarketSnapshot
-
-**Data Flow**:
-```
-Futures Trade (VN30F*) → DerivativesTracker (basis = futures - VN30 spot)
-                      ↓
-                 BasisPoint + DerivativesData
-```
-
-**Models**:
-- `BasisPoint` - Futures/spot prices + basis + premium/discount flag
-- `DerivativesData` - Current futures snapshot (price, bid/ask, basis, basis_pct)
-- `MarketSnapshot` - Unified view (quotes + indices + foreign + derivatives)
-
-**Key Features**:
-- Volume-based active contract selection (handles rollover)
-- Multi-contract tracking
-- Bounded basis history (maxlen=3600 = ~1h at 1 trade/sec)
-- Time-filtered trend analysis
-
-**Tests**: 34 Phase 3C tests covering:
-- Basis calculation (positive, negative, zero)
-- Premium vs discount detection
-- Percentage computation
-- Multi-contract tracking
-- Active contract selection logic
-- Volume accumulation
-- Basis trend filtering
-- Reset behavior
-- Integration with other trackers (100+ tick simulation)
-
-### Phase 3 Unified API (COMPLETE)
-Centralized market data orchestration:
-
-**Key Files**:
-- `app/services/market_data_processor.py` - Central dispatcher + unified API
-
-**Public API**:
-```python
-async def handle_quote(msg: SSIQuoteMessage)
-async def handle_trade(msg: SSITradeMessage)
-async def handle_foreign(msg: SSIForeignMessage)
-async def handle_index(msg: SSIIndexMessage)
-
-def get_market_snapshot() → MarketSnapshot
-def get_trade_analysis(symbol: str) → SessionStats
-def get_foreign_summary() → ForeignSummary
-def get_derivatives_data() → DerivativesData | None
-
-def reset_daily()  # Called at 15:00 VN
-```
-
-**Tests**: 326 total tests passing (all phases including Phase 5B routers)
-
-## Service Architecture
-
-### Service Initialization Pattern
-
-```python
-class MarketDataProcessor:
-    def __init__(self):
-        # Create component instances
-        self.quote_cache = QuoteCache()
-        self.classifier = TradeClassifier(self.quote_cache)
-        self.aggregator = SessionAggregator()
-        self.foreign_tracker = ForeignInvestorTracker()
-        self.index_tracker = IndexTracker()
-        self.derivatives_tracker = DerivativesTracker(self.index_tracker)
-```
-
-All services:
-- Stateful (hold in-memory data)
-- Resetable (daily reset at 15:00 VN)
-- Thread-safe (accessed via asyncio in FastAPI)
-- Type-hinted (Python 3.12 syntax)
-
-### Data Model Hierarchy
-
-```
-BaseModel (Pydantic)
-├── ClassifiedTrade (now with trading_session field)
-├── SessionBreakdown (new: per-session phase breakdown)
-├── SessionStats (now with ato/continuous/atc breakdowns)
-├── ForeignInvestorData
-├── ForeignSummary
-├── IntradayPoint
-├── IndexData
-├── BasisPoint
-├── DerivativesData
-└── MarketSnapshot
-
-Enum
-├── TradeType (MUA_CHU_DONG, BAN_CHU_DONG, NEUTRAL)
-```
-
-## Key Implementation Details
-
-### Trade Classification Algorithm
-
-```python
-def classify(self, trade: SSITradeMessage) -> ClassifiedTrade:
-    bid, ask = self.quote_cache.get_bid_ask(trade.symbol)
-    volume = trade.last_vol  # PER-TRADE, not cumulative
-
-    # Skip auction sessions
-    if trade.trading_session in ("ATO", "ATC"):
-        trade_type = TradeType.NEUTRAL
-    elif ask > 0 and trade.last_price >= ask:
-        trade_type = TradeType.MUA_CHU_DONG
-    elif bid > 0 and trade.last_price <= bid:
-        trade_type = TradeType.BAN_CHU_DONG
-    else:
-        trade_type = TradeType.NEUTRAL
-
-    return ClassifiedTrade(
-        symbol=trade.symbol,
-        price=trade.last_price,
-        volume=volume,
-        value=trade.last_price * volume * 1000,  # price in 1000 VND
-        trade_type=trade_type,
-        bid_price=bid,
-        ask_price=ask,
-        timestamp=datetime.now(),
-    )
-```
-
-**Critical**: Uses `trade.last_vol` (per-trade) NOT `trade.total_vol` (cumulative)
-
-### Foreign Investor Speed Calculation
-
-```python
-def update(self, msg: SSIForeignMessage) -> ForeignInvestorData:
-    # Compute delta from previous cumulative
-    if prev:
-        delta_buy = max(0, msg.f_buy_vol - prev.f_buy_vol)
-        delta_sell = max(0, msg.f_sell_vol - prev.f_sell_vol)
-    else:
-        delta_buy = msg.f_buy_vol
-        delta_sell = msg.f_sell_vol
-
-    # Store in rolling window
-    self._history[symbol].append(ForeignDelta(
-        buy_delta=delta_buy,
-        sell_delta=delta_sell,
-        timestamp=datetime.now(),
-    ))
-
-    # Calculate speed over 5-min window
-    speed = self._compute_speed(symbol, window_minutes=5)
-```
-
-### Basis Calculation
-
-```python
-def _compute_basis(self, futures_symbol: str) -> BasisPoint | None:
-    futures_price = self._futures_prices.get(futures_symbol, 0)
-    spot_value = self._index.get_vn30_value()
-
-    if futures_price <= 0 or spot_value <= 0:
-        return None
-
-    basis = futures_price - spot_value
-    basis_pct = basis / spot_value * 100
-
-    bp = BasisPoint(
-        timestamp=datetime.now(),
-        futures_symbol=futures_symbol,
-        futures_price=futures_price,
-        spot_value=spot_value,
-        basis=basis,
-        basis_pct=basis_pct,
-        is_premium=basis > 0,
-    )
-
-    self._basis_history.append(bp)
-    return bp
-```
-
-**Guards**: Zero-division protection, negative price handling
-
-## Testing Structure
-
-All tests use pytest + fixtures from `conftest.py`:
-
-```
-tests/
-├── conftest.py                        # Shared fixtures
-├── test_quote_cache.py                # 10 tests
-├── test_trade_classifier.py           # 8 tests
-├── test_session_aggregator.py         # 2 tests
-├── test_foreign_investor_tracker.py   # 29 tests
-├── test_index_tracker.py              # 27 tests
-├── test_derivatives_tracker.py        # 17 tests
-├── test_market_data_processor.py      # 14 tests
-└── test_data_processor_integration.py # 3 multi-channel tests
-```
-
-**Phase 4**: 37 WebSocket tests (11 ConnectionManager + 4 endpoint + 7 router + 15 DataPublisher)
-**Phase 5B**: 38 API router tests (12 market_router + 26 history_router)
-**Phase 6**: 31 PriceTracker tests (signal detection + integration with AlertService) + Frontend alert UI
-**Phase 8C**: 23 E2E tests (7 full_flow + 4 foreign + 3 alert + 4 reconnect + 5 session)
-**Total**: 380 tests (357 unit/integration + 23 E2E), all passing (84% coverage)
+**Unit Tests** (~280): QuoteCache, TradeClassifier, SessionAggregator, Foreign/Index/Derivatives trackers, Market processor
+**Router Tests** (~40): market_router, history_router, backtest_router endpoints
+**WebSocket Tests** (~35): ConnectionManager, DataPublisher, multi-channel router
+**PriceTracker Tests** (~31): All 6 signal types (VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCEL, BASIS_DIVERGENCE, VELOCITY_DIVERGENCE, IMBALANCE_EXTREME)
+**Backtest Tests** (~435): BacktestEngine (253 tests), BacktestRouter (181 tests)
+**E2E Tests** (~23): Full system flow, foreign tracking, alert generation, reconnect, session lifecycle
+**Total**: 434+ tests, 84% coverage enforced in CI
 
 ## Data Model — PriceData (Phase 5A)
 
@@ -588,15 +347,21 @@ const { data, status, error, isLive, reconnect } = useWebSocket<MarketSnapshot>(
 - PriceData interface: last_price, change, change_pct, ref_price, ceiling, floor
 - MarketSnapshot updated: prices field (dict[symbol → PriceData])
 
+## Recent Additions
+
+**Backtest Analysis Dashboard** (Phase 7B): Cross-correlation engine (velocity vs price), threshold discovery (imbalance→direction), time-of-day patterns. 4 REST endpoints + daily pre-compute + interactive frontend dashboard (8 components).
+
+**Velocity Analysis**: Order velocity tracking (VN30F vs VN30 basket), correlation metrics, 3 REST endpoints, TimescaleDB continuous aggregates, 3 new alert types (VELOCITY_DIVERGENCE, IMBALANCE_EXTREME).
+
 ## Code Quality Metrics
 
 | Metric | Target | Current |
 |--------|--------|---------|
 | Type Coverage | 100% | ✓ 100% |
-| Test Coverage | >90% | ✓ ~95% |
-| Latency (<5ms) | ✓ | ✓ All ops <5ms |
-| Memory Bounded | ✓ | ✓ All capped |
-| Python 3.12 | ✓ | ✓ Modern syntax |
+| Test Coverage | >80% | ✓ 84% |
+| All operations | <5ms | ✓ <5ms |
+| Memory bounded | ✓ | ✓ Capped |
+| Python 3.12 | ✓ | ✓ Modern |
 | React 19 | ✓ | ✓ Latest |
 
 ## Dependencies
