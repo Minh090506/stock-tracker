@@ -30,5 +30,8 @@ WORKLOG.md
 .claude/commands/
 .claude/settings.json
 
+# SSL certificates (Origin certs — never commit)
+nginx/ssl/
+
 # Docker
 *.log

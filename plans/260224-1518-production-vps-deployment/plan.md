@@ -9,7 +9,7 @@
 
 | # | Phase | Status | Est. | Files |
 |---|-------|--------|------|-------|
-| 1 | VPS Setup & Docker | Pending | 45min | Manual (SSH) |
+| 1 | VPS Setup & Docker | **Done** | 45min | Manual (SSH) |
 | 2 | Domain + Cloudflare SSL | **Done** | 30min | nginx.conf, docker-compose.prod.yml |
 | 3 | GitHub Actions CD Pipeline | Pending | 1h | ci.yml, deploy-vps.sh |
 | 4 | DB Backup + Production Hardening | Pending | 1h | backup.sh, docker-compose.prod.yml, .env |
