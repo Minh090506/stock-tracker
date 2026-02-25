@@ -43,7 +43,7 @@ Update `nginx/nginx.conf` to:
 
 server {
     listen 80;
-    server_name yourdomain.com www.yourdomain.com;  # ← update
+    server_name stock.myvivatour.com www.stock.myvivatour.com;  # ← update
 
     # Trust Cloudflare proxy IPs for real client IP
     set_real_ip_from 173.245.48.0/20;
@@ -99,7 +99,7 @@ grafana:
 
 In `.env` on VPS:
 ```bash
-CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+CORS_ORIGINS=https://stock.myvivatour.com,https://www.stock.myvivatour.com
 ```
 
 ### 2.5 Verify
@@ -110,8 +110,8 @@ cd /home/deploy/stock-tracker
 docker compose -f docker-compose.prod.yml up -d --build
 
 # Test
-curl -I https://yourdomain.com         # Should 200 via Cloudflare
-curl https://yourdomain.com/health      # {"status":"ok"}
+curl -I https://stock.myvivatour.com         # Should 200 via Cloudflare
+curl https://stock.myvivatour.com/health      # {"status":"ok"}
 ```
 
 ## Cloudflare WebSocket Note
@@ -120,9 +120,9 @@ Cloudflare free plan supports WebSocket proxying. No special config needed — i
 
 ## Success Criteria
 
-- [ ] `https://yourdomain.com` loads dashboard
-- [ ] SSL certificate valid (Cloudflare edge)
-- [ ] WebSocket `/ws/market` connects via `wss://yourdomain.com/ws/market`
-- [ ] Prometheus/Grafana NOT accessible from internet
-- [ ] Security headers present in response
-- [ ] Real client IPs logged (not Cloudflare IPs)
+- [ ] `https://stock.myvivatour.com` loads dashboard *(verify after deploy)*
+- [ ] SSL certificate valid (Cloudflare edge) *(verify after deploy)*
+- [ ] WebSocket `/ws/market` connects via `wss://stock.myvivatour.com/ws/market` *(verify after deploy)*
+- [x] Prometheus/Grafana NOT accessible from internet *(ports removed from docker-compose)*
+- [x] Security headers present in response *(added to nginx)*
+- [x] Real client IPs logged (not Cloudflare IPs) *(set_real_ip_from IPv4+IPv6)*

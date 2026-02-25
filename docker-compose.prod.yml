@@ -106,8 +106,8 @@ services:
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=15d"
-    ports:
-      - "9090:9090"
+    expose:
+      - "9090"
     restart: unless-stopped
     deploy:
       resources:
@@ -127,8 +127,8 @@ services:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3000:3000"
+    expose:
+      - "3000"
     depends_on:
       - prometheus
     restart: unless-stopped
