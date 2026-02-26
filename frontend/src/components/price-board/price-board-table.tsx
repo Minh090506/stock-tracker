@@ -18,8 +18,19 @@ function priceColorClass(row: PriceBoardRow): string {
   return "text-gray-300";
 }
 
+/** Display price in thousands (45000→45, 45500→45.5) */
 function formatPrice(price: number): string {
-  return price > 0 ? price.toFixed(2) : "-";
+  if (price <= 0) return "-";
+  const k = price / 1000;
+  // 1 decimal, trim trailing zero (45.0→45, 45.5→45.5)
+  return k % 1 === 0 ? k.toFixed(0) : k.toFixed(1);
+}
+
+/** Display change in thousands with 2 decimals (350→0.35, -1100→-1.10) */
+function formatChange(change: number): string {
+  const k = change / 1000;
+  const sign = k > 0 ? "+" : "";
+  return `${sign}${k.toFixed(2)}`;
 }
 
 interface PriceBoardTableProps {
@@ -128,7 +139,7 @@ export function PriceBoardTable({ rows }: PriceBoardTableProps) {
                   {formatPrice(row.price.last_price)}
                 </td>
                 <td className={`px-4 py-2 text-right font-mono ${colorClass}`}>
-                  {row.price.change > 0 ? "+" : ""}{row.price.change.toFixed(2)}
+                  {formatChange(row.price.change)}
                 </td>
                 <td className={`px-4 py-2 text-right font-mono ${colorClass}`}>
                   {formatPercent(row.price.change_pct)}

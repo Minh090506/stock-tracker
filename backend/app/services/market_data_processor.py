@@ -56,6 +56,8 @@ class MarketDataProcessor:
         self._subscribers: list[SubscriberCallback] = []
         # Price cache: symbol -> (last_price, change, ratio_change)
         self._price_cache: dict[str, tuple[float, float, float]] = {}
+        # Per-symbol price history for sparkline (full session, max 500 points)
+        self._price_history: dict[str, list[float]] = {}
         # Optional price tracker for alert generation (set externally)
         self.price_tracker = None
         # Watchlist: only process symbols in this set (empty = process all)
@@ -110,6 +112,12 @@ class MarketDataProcessor:
         self._price_cache[msg.symbol] = (
             msg.last_price, msg.change, msg.ratio_change
         )
+        # Accumulate price history for sparkline (dedup consecutive same price)
+        hist = self._price_history.setdefault(msg.symbol, [])
+        if not hist or hist[-1] != msg.last_price:
+            hist.append(msg.last_price)
+            if len(hist) > 500:
+                hist.pop(0)
 
         classified = self.classifier.classify(msg)
         stats = self.aggregator.add_trade(classified)
@@ -192,6 +200,10 @@ class MarketDataProcessor:
             velocity=velocity,
         )
 
+    def get_sparklines(self) -> dict[str, list[float]]:
+        """Per-symbol price history for sparkline charts (full session)."""
+        return self._price_history
+
     def get_foreign_summary(self) -> ForeignSummary:
         """Aggregate foreign flow across all tracked symbols."""
         return self.foreign_tracker.get_summary()
@@ -233,6 +245,7 @@ class MarketDataProcessor:
         self.velocity_tracker.reset()
         self.correlation_engine.reset()
         self._price_cache.clear()
+        self._price_history.clear()
         if self.price_tracker:
             self.price_tracker.reset()
         logger.info("Session data reset")

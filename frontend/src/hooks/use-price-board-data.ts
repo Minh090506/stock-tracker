@@ -12,7 +12,7 @@ export interface PriceBoardRow {
   sparkline: number[];
 }
 
-const MAX_SPARKLINE_POINTS = 50;
+const MAX_SPARKLINE_POINTS = 500;
 
 const EMPTY_PRICE: PriceData = {
   last_price: 0, change: 0, change_pct: 0,
@@ -38,6 +38,20 @@ export function usePriceBoardData() {
 
   // Sparkline accumulation (persisted across renders via ref)
   const sparklineRef = useRef<Record<string, number[]>>({});
+  const sparklineSeededRef = useRef(false);
+
+  // Seed sparklines from backend price history on mount (full session data)
+  useEffect(() => {
+    if (sparklineSeededRef.current) return;
+    apiFetch<Record<string, number[]>>("/market/sparklines")
+      .then((data) => {
+        for (const [symbol, prices] of Object.entries(data)) {
+          sparklineRef.current[symbol] = prices.slice(-MAX_SPARKLINE_POINTS);
+        }
+        sparklineSeededRef.current = true;
+      })
+      .catch(() => {}); // silently fail — WS will accumulate from here
+  }, []);
 
   // Update sparklines when snapshot changes
   useEffect(() => {

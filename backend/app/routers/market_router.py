@@ -42,6 +42,14 @@ async def get_snapshot():
     return processor.get_market_snapshot()
 
 
+@router.get("/sparklines")
+async def get_sparklines():
+    """Per-symbol price history for sparkline charts (full session)."""
+    from app.main import processor
+
+    return processor.get_sparklines()
+
+
 @router.get("/foreign-detail")
 async def get_foreign_detail():
     """Per-symbol foreign investor data for heatmap/table."""
