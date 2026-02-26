@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useWebSocket } from "./use-websocket";
 import { apiFetch } from "../utils/api-client";
-import type { MarketSnapshot, PriceData, SessionStats } from "../types";
+import type { MarketSnapshot, PriceData, SessionStats, IndexData } from "../types";
 
 export interface PriceBoardRow {
   symbol: string;
@@ -81,7 +81,10 @@ export function usePriceBoardData() {
       .filter((r) => r.price.last_price > 0);
   }, [snapshot, vn30Symbols]);
 
+  // VN30 index data from SSI MI:ALL channel (not aggregated from 30 stocks)
+  const vn30Index: IndexData | null = snapshot?.indices?.["VN30"] ?? null;
+
   const loading = status === "connecting" && !snapshot;
 
-  return { rows, loading, error, isLive, status, reconnect };
+  return { rows, vn30Index, loading, error, isLive, status, reconnect };
 }

@@ -5,9 +5,10 @@ import { PriceBoardSkeleton } from "../components/ui/price-board-skeleton";
 import { ErrorBanner } from "../components/ui/error-banner";
 import { PriceBoardTable } from "../components/price-board/price-board-table";
 import { MarketSessionIndicator } from "../components/price-board/market-session-indicator";
+import { IndexTrendBar } from "../components/price-board/index-trend-bar";
 
 export default function PriceBoardPage() {
-  const { rows, loading, error, isLive, status, reconnect } = usePriceBoardData();
+  const { rows, vn30Index, loading, error, isLive, status, reconnect } = usePriceBoardData();
 
   if (loading) return <PriceBoardSkeleton />;
 
@@ -33,6 +34,9 @@ export default function PriceBoardPage() {
           </span>
         </div>
       </div>
+
+      {/* VN30 Index trend — data from SSI MI:ALL channel */}
+      {vn30Index && <IndexTrendBar data={vn30Index} />}
 
       {/* Non-blocking error — show stale data + warning */}
       {error && rows.length > 0 && (
