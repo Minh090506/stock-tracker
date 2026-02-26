@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     ssi_consumer_id: str = ""
     ssi_consumer_secret: str = ""
     ssi_base_url: str = "https://fc-data.ssi.com.vn/"
-    ssi_stream_url: str = "https://fc-data.ssi.com.vn/"
+    ssi_stream_url: str = "https://fc-datahub.ssi.com.vn/"
 
     # Database
     database_url: str = "postgresql://stock:stock@localhost:5432/stock_tracker"

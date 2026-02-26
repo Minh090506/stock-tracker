@@ -72,13 +72,24 @@ class SSIMarketService:
 
     @staticmethod
     def _extract_symbols(result) -> list[str]:
-        """Extract symbol list from SSI IndexComponents response."""
+        """Extract symbol list from SSI IndexComponents response.
+
+        Response format: {"data": [{"IndexCode": "VN30", "IndexComponent": [
+            {"Isin": "ACB", "StockSymbol": "ACB"}, ...
+        ]}]}
+        """
         if not isinstance(result, dict):
             return []
         data = result.get("data", [])
-        if isinstance(data, list):
-            return [item.get("StockSymbol", "") for item in data if item.get("StockSymbol")]
-        return []
+        if not isinstance(data, list) or not data:
+            return []
+        # data[0] is the index object; symbols are in IndexComponent list
+        index_obj = data[0]
+        components = index_obj.get("IndexComponent", [])
+        if isinstance(components, list) and components:
+            return [c.get("StockSymbol", "") for c in components if c.get("StockSymbol")]
+        # Fallback: flat list format (older API versions)
+        return [item.get("StockSymbol", "") for item in data if item.get("StockSymbol")]
 
     @staticmethod
     def _extract_data_list(result) -> list[dict]:

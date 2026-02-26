@@ -3,10 +3,16 @@
 Connects to SSI SignalR hub via asyncio.to_thread (ssi-fc-data is sync-only),
 demuxes incoming messages by RType, dispatches to registered callbacks,
 and handles reconnection with REST snapshot reconciliation.
+
+NOTE: ssi-fc-data v2.2.2 MarketDataStream.start() is NON-BLOCKING — it spawns
+a daemon thread for run_forever() and returns immediately. We use a
+threading.Event to block asyncio.to_thread() until the WS actually closes,
+so _on_stream_done fires only on real disconnection.
 """
 
 import asyncio
 import logging
+import threading
 from collections.abc import Callable
 
 from ssi_fc_data.fc_md_client import MarketDataClient
@@ -39,6 +45,8 @@ class SSIStreamService:
         self._shutting_down = False
         self._channels: list[str] = []
         self._reconnect_task: asyncio.Task | None = None
+        # Threading event to block to_thread until WS actually closes
+        self._close_event: threading.Event | None = None
         # Callback registry keyed by RType
         self._callbacks: dict[str, list[MessageCallback]] = {
             "Trade": [],
@@ -91,23 +99,48 @@ class SSIStreamService:
     async def connect(self, channels: list[str]):
         """Connect SSI stream in a background thread.
 
-        This is the DEFAULT approach — SignalR start() blocks the calling thread,
-        so asyncio.to_thread is mandatory, not a fallback.
+        ssi-fc-data start() is NON-BLOCKING — it spawns a daemon thread and
+        returns immediately. We use a threading.Event to keep to_thread()
+        alive until the WebSocket on_close callback fires, so _on_stream_done
+        correctly detects real disconnections.
         """
         # Capture the running event loop for cross-thread callback dispatch
         self._loop = asyncio.get_running_loop()
         self._channels = channels
         config = self._auth.config
-        self._stream = MarketDataStream(config, MarketDataClient(config))
+
+        # Signal old connection to unblock if still waiting
+        if self._close_event:
+            self._close_event.set()
+
+        # Create a new event for this connection's lifecycle
+        close_event = threading.Event()
+        self._close_event = close_event
+
+        def _on_ws_close():
+            """Called by ssi-fc-data when the WebSocket actually disconnects."""
+            logger.warning("SSI WebSocket on_close fired")
+            close_event.set()
+
+        self._stream = MarketDataStream(
+            config, MarketDataClient(config), on_close=_on_ws_close,
+        )
         channel_str = ",".join(channels)
         logger.info("Connecting SSI stream — channels: %s", channel_str)
-        self._stream_task = asyncio.create_task(
-            asyncio.to_thread(
-                self._stream.start,
+
+        def _start_and_block():
+            """Start the stream (non-blocking) then block until WS closes."""
+            self._stream.start(
                 self._handle_message,
                 self._handle_error,
                 channel_str,
             )
+            # Block this thread until on_close fires or disconnect() signals.
+            # 5-minute timeout as safety valve if on_close never fires.
+            close_event.wait(timeout=300)
+
+        self._stream_task = asyncio.create_task(
+            asyncio.to_thread(_start_and_block)
         )
         # Store ref to prevent GC
         self._background_tasks.add(self._stream_task)
@@ -120,6 +153,9 @@ class SSIStreamService:
         # Cancel pending reconnect attempt
         if self._reconnect_task and not self._reconnect_task.done():
             self._reconnect_task.cancel()
+        # Signal close event to unblock the stream thread
+        if self._close_event:
+            self._close_event.set()
         if self._stream_task and not self._stream_task.done():
             self._stream_task.cancel()
             try:
@@ -214,7 +250,7 @@ class SSIStreamService:
         if exc:
             logger.error("SSI stream task crashed: %s", exc, exc_info=exc)
         else:
-            logger.warning("SSI stream task ended unexpectedly without error")
+            logger.warning("SSI stream task ended (WebSocket closed) — scheduling reconnect")
         # Notify downstream of disconnection
         if self._disconnect_callback:
             try:
@@ -233,7 +269,7 @@ class SSIStreamService:
         """Re-authenticate and reconnect SSI stream with exponential backoff.
 
         Waits briefly after connect() to verify stream stability before
-        declaring success. If stream crashes immediately, backoff increases.
+        declaring success. Uses _close_event to detect real disconnections.
         """
         delay = self._BASE_RECONNECT_DELAY
         attempt = 0
@@ -248,10 +284,15 @@ class SSIStreamService:
                 await self._auth.authenticate()
                 # Reconnect stream with same channels
                 await self.connect(self._channels)
-                # Wait briefly to verify stream didn't crash immediately
-                await asyncio.sleep(3.0)
+                # Wait briefly and verify stream is still alive.
+                # Two failure modes: WS connected then closed (close_event set),
+                # or negotiate/start failed (stream_task done with exception).
+                await asyncio.sleep(5.0)
+                if self._close_event and self._close_event.is_set():
+                    raise RuntimeError("Stream disconnected immediately after connect")
                 if self._stream_task and self._stream_task.done():
-                    raise RuntimeError("Stream crashed immediately after connect")
+                    exc = self._stream_task.exception() if not self._stream_task.cancelled() else None
+                    raise RuntimeError(f"Stream failed to start: {exc}")
                 # Reconcile cumulative state from REST snapshot
                 await self.reconcile_after_reconnect()
                 logger.info("SSI auto-reconnect successful after %d attempt(s)", attempt)
