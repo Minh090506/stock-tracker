@@ -13,6 +13,50 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ---
 
+## [Plan V2 — Daily Chart + Events + Polish] - 2026-05-19
+
+### Planned (not implemented yet)
+
+Plan dir: `plans/260519-1008-daily-chart-events-polish/`
+
+**Phase 9 scope expansion** decomposed into 6 vertical slices (Phase 0 pre-flight + 5 implementation slices), TDD-disciplined, 8-week estimate.
+
+**New features planned**:
+- Daily OHLCV chart cho VN30 + VNINDEX (TradingView-like) với MA/BB/RSI/MACD indicators + drawing tools (trendline, hline, fibonacci)
+- Events timeline đa nguồn: vnstock corp actions + earnings, Vietstock RSS news với Gemini Flash sentiment scoring, manual macro JSON
+- UX polish: 8-page mobile responsive (375px), dark/light theme (Tailwind v4 CSS-first), watchlist (localStorage + cross-tab), CSV export với UTF-8 BOM, Cmd+K palette
+
+**New dependencies planned**:
+- Backend: `apscheduler==3.10.4`, `vnstock==4.0.3`
+- Frontend: `vitest`, `@testing-library/react`, `happy-dom`
+
+**Constraint changes**:
+- vnstock + Vietstock RSS added for events ingestion
+- SSI-only constraint kept for OHLCV data
+- CafeF RSS dropped (verified blocked from dev IPs)
+
+**Spike findings critical**:
+- 🚨 Production backend currently DOWN (502) — Phase 0 must restore before any feature work
+- SSI DailyOhlc pagination simpler than V1 plan thought: 1 page/symbol for 2 years (pageSize=1000)
+- Migration pattern is Alembic Python files, not raw SQL
+- Schema types: `VARCHAR(10)`, `NUMERIC(12,2)` match existing
+- Tailwind v4 uses CSS-first config (no `tailwind.config.*` file)
+
+### Documents created
+
+- `plans/reports/brainstorm-260519-1008-daily-chart-events-polish.md` — design exploration
+- `plans/reports/code-reviewer-260519-1008-plan-review.md` — 5 critical + 8 high gaps identified in V1
+- `plans/reports/researcher-260519-1008-phase0-spike-findings.md` — verified assumptions
+- `plans/260519-1008-daily-chart-events-polish/plan.md` + 6 phase files (V2)
+
+### Status
+
+- Plan V2 written and approved
+- Phase 0 pending user actions: VPS access for prod restore, `GEMINI_API_KEY` provision
+- Open questions documented in plan; awaiting user before Phase 0 starts
+
+---
+
 ## [Production Deployment + KRX Futures Support] - 2026-02-25
 
 ### Added

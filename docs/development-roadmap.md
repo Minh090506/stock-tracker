@@ -1,7 +1,7 @@
 # Development Roadmap
 
-**Last Updated**: 2026-02-24 16:59
-**Overall Progress**: 100% COMPLETE (All phases complete: Scaffolding through Monitoring + Backtest Dashboard + Velocity Analysis) ✅
+**Last Updated**: 2026-05-19 10:08
+**Overall Progress**: Phases 1-8D COMPLETE (Feb 2026) ✅ | Phase 9 PLANNED (May 2026) 📋 | Production currently DOWN (backend 502, pending Phase 0 restore)
 
 ## Phase Overview
 
@@ -21,6 +21,30 @@
 | 8C | E2E Tests & Profiling | ✅ COMPLETE | 100% | ✓ | 380 | 23 E2E tests + performance profiling suite |
 | 8D | Monitoring & Docs | ✅ COMPLETE | 100% | ✓ | - | Prometheus + Grafana + deploy.sh + 5 docs |
 | 8 | Testing & Deployment | ✅ COMPLETE | 100% | ✓ | 434 | All infrastructure complete; deployment 2026-02-11 ✅ |
+| **9** | **Daily Chart + Events Timeline + Polish** | 📋 PLANNED | 0% | 8w | TBD | Plan V2 in `plans/260519-1008-daily-chart-events-polish/`. 6 phases (Phase 0 + 5 slices) |
+
+## Phase 9 — Daily Chart + Events Timeline + Polish (planned 2026-05-19)
+
+**Plan**: `plans/260519-1008-daily-chart-events-polish/`
+**Estimate**: 8 weeks (revised up from 5.5w V1 after spike + review)
+**Approach**: Vertical slice + TDD
+**Status**: Pending Phase 0 (production restore + dependency installs + spikes)
+
+| Slice | Title | Estimate | Risk |
+|-------|-------|----------|------|
+| 0 | Pre-flight (prod restore, deps, spikes) | 2-3d | P0 — prod backend currently 502 |
+| 1 | Foundation + VNINDEX Daily chart | 1.5-2w | Low — SSI DailyOhlc verified |
+| 2 | Events pipeline + VN30 expand | 1.5w | Med — vnstock historical events unverified |
+| 3 | News + Gemini sentiment | 1.5w | **High** — Vietstock RSS only (CafeF dropped); drop-able if blocked |
+| 4 | TA indicators + drawing tools | 1.5w | Med — lightweight-charts v4 Primitives API |
+| 5 | Polish (mobile + theme + watchlist + CSV) | 1.5-2w | Low — UX work |
+
+**Key constraint relaxation**: `vnstock` + `Vietstock RSS` added for events ingestion (SSI-only kept for OHLCV). CafeF blocked, dropped.
+
+**Reports**:
+- Brainstorm: `plans/reports/brainstorm-260519-1008-daily-chart-events-polish.md`
+- Review: `plans/reports/code-reviewer-260519-1008-plan-review.md`
+- Spike: `plans/reports/researcher-260519-1008-phase0-spike-findings.md`
 
 ## Completed Phases
 

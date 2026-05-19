@@ -18,6 +18,16 @@ Real-time Vietnamese stock market tracking and analytics platform focused on VN3
 5. **Mua/Bán chủ động** - Active buy/sell volume classification per trade
 6. **Analytics** - Real-time alerts (VOLUME_SPIKE, PRICE_BREAKOUT, FOREIGN_ACCELERATION, BASIS_DIVERGENCE) with dual filtering and sound notifications
 
+## Phase 9 — Scope Expansion (planned 2026-05-19, not yet started)
+
+Plan V2 in `plans/260519-1008-daily-chart-events-polish/` (post-spike, 8w estimate).
+
+7. **Daily Chart (TradingView-like)** - Historical Daily OHLCV cho VN30 + VNINDEX với TA indicators (MA/BB/RSI/MACD) + drawing tools (trendline/hline/fibonacci). Source: SSI DailyOhlc REST.
+8. **Events Timeline** - Multi-source overlay: corp actions + earnings (vnstock v4), news (Vietstock RSS + Gemini Flash scoring), macro (curated JSON). CafeF dropped (verified blocked).
+9. **UX Polish** - Mobile responsive (8 pages), dark/light theme (Tailwind v4 CSS-first), watchlist (localStorage + cross-tab sync), CSV export, Cmd+K palette.
+
+Constraint update: vnstock + Vietstock RSS added for events. SSI-only kept for OHLCV.
+
 ## Technical Stack
 
 - **Backend**: Python 3.12+, FastAPI, asyncpg
