@@ -32,6 +32,11 @@ services:
     container_name: stock-backend
     expose:
       - "8000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
     env_file:
       - .env
     environment:

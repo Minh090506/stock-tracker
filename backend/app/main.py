@@ -14,6 +14,21 @@ from app.metrics import http_request_duration_seconds
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 
+
+class _ProbeAccessLogFilter(logging.Filter):
+    """Drop access logs for health/metrics probes.
+
+    Healthchecks and Prometheus scrapes hit these endpoints every few seconds;
+    logging each one floods the container log (filled the disk in production).
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return "/health" not in msg and "/metrics" not in msg
+
+
+logging.getLogger("uvicorn.access").addFilter(_ProbeAccessLogFilter())
+
 from app.database.pool import db
 from app.database.batch_writer import BatchWriter
 from app.analytics.backtest_engine import BacktestEngine
