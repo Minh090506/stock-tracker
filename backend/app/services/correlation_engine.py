@@ -41,7 +41,12 @@ def _pearson(x: list[float], y: list[float]) -> float:
     sum_x2 = sum(a * a for a in x)
     sum_y2 = sum(b * b for b in y)
     num = n * sum_xy - sum_x * sum_y
-    den = ((n * sum_x2 - sum_x ** 2) * (n * sum_y2 - sum_y ** 2)) ** 0.5
+    # Variance terms are non-negative in exact arithmetic, but catastrophic
+    # cancellation on large near-constant inputs can round them slightly
+    # negative; clamp to 0 so the sqrt stays real instead of going complex.
+    var_x = max(0.0, n * sum_x2 - sum_x ** 2)
+    var_y = max(0.0, n * sum_y2 - sum_y ** 2)
+    den = (var_x * var_y) ** 0.5
     return max(-1.0, min(1.0, num / den)) if den > 0 else 0.0
 
 

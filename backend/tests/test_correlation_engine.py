@@ -40,6 +40,22 @@ class TestPearsonFunction:
         r = _pearson(x, y)
         assert abs(r - 0.9919) < 0.01
 
+    def test_large_near_constant_values_stay_real(self):
+        # Large near-constant inputs (e.g. accumulated net velocity) can make a
+        # variance term slightly negative via float cancellation; the sqrt must
+        # not turn complex and the comparison must not raise.
+        x = [
+            266403927.40139613,
+            266403927.40041828,
+            266403927.4008487,
+            266403927.40025848,
+            266403927.40151292,
+        ]
+        y = [0.0, 0.5, 1.0, 0.0, 0.5]
+        r = _pearson(x, y)
+        assert isinstance(r, float)
+        assert -1.0 <= r <= 1.0
+
 
 class TestCorrelationEngine:
     def test_returns_correlation_data(self):
